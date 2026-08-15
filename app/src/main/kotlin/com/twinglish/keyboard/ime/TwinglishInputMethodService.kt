@@ -65,7 +65,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     // State
     private var symbolPage = 0
-    private var shiftState = ShiftState.OFF
+    private var shiftState = ShiftState.LOWERCASE
     private var twinglishActive = false
     private var mode = Mode.LETTERS
     private var editorClass = EditorClass.TEXT
@@ -73,7 +73,8 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private var repeatActive = false
     private var currentSentence = ""
 
-    private enum class ShiftState { OFF, ONCE, LOCK }
+    /** Explicit keyboard shift state machine. */
+    private enum class ShiftState { LOWERCASE, SHIFTED, CAPS_LOCK }
     private enum class Mode { LETTERS, SYMBOLS, EMOJI, CLIPBOARD }
     private enum class EditorClass { TEXT, PASSWORD, EMAIL, URL, NUMBER, PHONE, OTHER }
 
@@ -118,6 +119,12 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
                     }
                     state.alternatives.forEach {
                         list += SuggestionStripView.Suggestion(text = it, primary = false, source = "twinglish")
+                    }
+                    // Translation failed (no confident rule): fall back to
+                    // English word suggestions — never a partial hybrid.
+                    if (list.isEmpty() && state.sentence.isNotBlank()) {
+                        val word = state.sentence.substringAfterLast(' ').lowercase()
+                        list += englishSuggestions(word)
                     }
                     val suggestions = list
                     withContext(Dispatchers.Main) {
@@ -233,10 +240,13 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         symbolPage = 0
         currentSentence = ""
 
-        if (settings.autoCapitalization && editorClass == EditorClass.TEXT) {
-            shiftState = ShiftState.ONCE
+        // Auto-capitalize only at the start of a sentence: an empty field or
+        // right after sentence-ending punctuation / a newline. Mid-sentence
+        // edits must not force the keyboard into uppercase.
+        shiftState = if (settings.autoCapitalization && editorClass == EditorClass.TEXT && atSentenceStart()) {
+            ShiftState.SHIFTED
         } else {
-            shiftState = ShiftState.OFF
+            ShiftState.LOWERCASE
         }
         twinglishActive = settings.twinglishEnabled
         if (::toolbar.isInitialized) {
@@ -478,19 +488,22 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             }
         }
 
-        if (shiftState == ShiftState.ONCE && char.length == 1 && char[0].isLetter()) {
+        // A single SHIFT tap capitalizes exactly one letter, then the
+        // keyboard returns to lowercase. CAPS_LOCK keeps capitalizing until
+        // the shift key is tapped again.
+        if (shiftState == ShiftState.SHIFTED && char.length == 1 && char[0].isLetter()) {
             input.commitText(char.uppercase())
-            shiftState = ShiftState.OFF
+            shiftState = ShiftState.LOWERCASE
             refreshLayout()
         } else {
             input.commitText(char)
         }
 
-        // Auto-capitalize after sentence-ending punctuation.
+        // Auto-capitalize the next word after sentence-ending punctuation.
         if (settings.autoCapitalization && editorClass == EditorClass.TEXT &&
             char in listOf(".", "!", "?", "\n")
         ) {
-            shiftState = ShiftState.ONCE
+            shiftState = ShiftState.SHIFTED
             refreshLayout()
         }
 
@@ -500,7 +513,16 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun commitSpace() {
         input.commitText(" ")
-        shiftState = ShiftState.OFF
+        // A space after ".!?" keeps the next sentence capitalized; anywhere
+        // else the keyboard returns to lowercase.
+        val before = input.textBeforeCursor(1).toString()
+        shiftState = if (settings.autoCapitalization && editorClass == EditorClass.TEXT &&
+            before.isNotEmpty() && before.last() in ".!?"
+        ) {
+            ShiftState.SHIFTED
+        } else {
+            ShiftState.LOWERCASE
+        }
         refreshLayout()
         refreshSentenceFromCursor()
         updateSuggestions(currentSentence)
@@ -512,10 +534,16 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         val flagNoEnter = action and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0
         if (actionId != EditorInfo.IME_ACTION_NONE && actionId != EditorInfo.IME_ACTION_UNSPECIFIED && !flagNoEnter) {
             input.performEditorAction(actionId)
+            shiftState = ShiftState.LOWERCASE
         } else {
             input.commitText("\n")
+            // A newline starts a new sentence in multiline fields.
+            shiftState = if (settings.autoCapitalization && editorClass == EditorClass.TEXT) {
+                ShiftState.SHIFTED
+            } else {
+                ShiftState.LOWERCASE
+            }
         }
-        shiftState = ShiftState.OFF
         refreshLayout()
         currentSentence = ""
         updateSuggestions("")
@@ -523,11 +551,19 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun toggleShift() {
         shiftState = when (shiftState) {
-            ShiftState.OFF -> ShiftState.ONCE
-            ShiftState.ONCE -> ShiftState.LOCK
-            ShiftState.LOCK -> ShiftState.OFF
+            ShiftState.LOWERCASE -> ShiftState.SHIFTED
+            ShiftState.SHIFTED -> ShiftState.CAPS_LOCK
+            ShiftState.CAPS_LOCK -> ShiftState.LOWERCASE
         }
         refreshLayout()
+    }
+
+    /** True when the cursor sits at the start of a sentence (or the field). */
+    private fun atSentenceStart(): Boolean {
+        if (!input.isActive) return true
+        val before = input.textBeforeCursor(64).toString()
+        val text = before.trimEnd(' ')
+        return text.isEmpty() || text.last() in ".!?\n"
     }
 
     private fun toggleSymbolMode() {
@@ -559,12 +595,12 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         if (!::keyboardView.isInitialized) return
         val enter = enterIcon()
         val shiftIcon = when (shiftState) {
-            ShiftState.OFF -> R.drawable.ic_shift
-            ShiftState.ONCE -> R.drawable.ic_shift_active
-            ShiftState.LOCK -> R.drawable.ic_shift_caps
+            ShiftState.LOWERCASE -> R.drawable.ic_shift
+            ShiftState.SHIFTED -> R.drawable.ic_shift_active
+            ShiftState.CAPS_LOCK -> R.drawable.ic_shift_caps
         }
         val rows = when (mode) {
-            Mode.LETTERS -> KeyboardLayouts.letters(shiftState != ShiftState.OFF, symbolMode = false, enterIcon = enter, shiftIcon = shiftIcon)
+            Mode.LETTERS -> KeyboardLayouts.letters(shiftState != ShiftState.LOWERCASE, symbolMode = false, enterIcon = enter, shiftIcon = shiftIcon)
             Mode.SYMBOLS -> KeyboardLayouts.symbols(symbolPage, enterIcon = enter)
             Mode.EMOJI -> KeyboardLayouts.letters(false, symbolMode = false, enterIcon = enter, shiftIcon = R.drawable.ic_shift)
             Mode.CLIPBOARD -> KeyboardLayouts.letters(false, symbolMode = false, enterIcon = enter, shiftIcon = R.drawable.ic_shift)

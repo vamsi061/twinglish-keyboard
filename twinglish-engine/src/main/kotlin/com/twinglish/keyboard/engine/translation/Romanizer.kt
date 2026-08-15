@@ -106,6 +106,13 @@ object Romanizer {
         ('\u0C33' to '\u0C24') to "lth", // ళ్త → lth (వెళ్తున్నాను → velthunnanu)
     )
 
+    // Casual chat spellings that differ from mechanical romanization
+    // (కావాలి → "kavali" not "kaavaali"). Keyed on the romanized form.
+    private val casualOverrides = mapOf(
+        "kaavaali" to "kavali",
+        "kaavaala" to "kavala",
+    )
+
     // Anusvara assimilates to the following consonant's place of articulation.
     private val nasalBefore = setOf(
         '\u0C15', '\u0C16', '\u0C17', '\u0C18', '\u0C19', // క ఖ గ ఘ ఙ
@@ -259,9 +266,15 @@ object Romanizer {
         var result = sb.toString()
         if (style == RomanizationStyle.CASUAL) {
             // చేస్తున్నావు → chestunnav : drop the final -u in -avu / -uvu
-            // endings, per word.
+            // endings, per word. Trailing punctuation is peeled off first so
+            // "?" / "!" attached to the Telugu (question templates) don't
+            // block the shortening (వెళ్తున్నావు? → velthunnav?).
             result = result.split(' ').joinToString(" ") { word ->
-                if (word.endsWith("avu") || word.endsWith("uvu")) word.dropLast(1) else word
+                val punct = word.takeLastWhile { it in "?!.,;:" }
+                val core = word.dropLast(punct.length)
+                val shortened =
+                    if (core.endsWith("avu") || core.endsWith("uvu")) core.dropLast(1) else core
+                (casualOverrides[shortened] ?: shortened) + punct
             }
         }
         return result

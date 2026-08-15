@@ -93,6 +93,64 @@ class TwinglishEngineTest {
         assertEquals("Hey ra, em chestunnav?", t("Hey ra, what are you doing?"))
     }
 
+    // ---- Bug-fix: complete phrase translation, never token-by-token ----
+
+    @Test
+    fun `which movie you want translates as a whole phrase`() {
+        assertEquals("e sinima kavali?", t("which movie you want"))
+    }
+
+    @Test
+    fun `which movie you want with punctuation`() {
+        assertEquals("e sinima kavali?", t("Which movie you want?"))
+    }
+
+    @Test
+    fun `which movie are you watching`() {
+        assertEquals("e sinima chustunnav?", t("Which movie are you watching"))
+    }
+
+    @Test
+    fun `i will call you later`() {
+        assertEquals("tarvata neeku call chesta", t("I will call you later"))
+    }
+
+    @Test
+    fun `all caps question normalizes to lowercase output`() {
+        assertEquals("em chestunnav?", t("WHAT ARE YOU DOING"))
+    }
+
+    @Test
+    fun `mixed caps question normalizes to lowercase output`() {
+        assertEquals("em chestunnav?", t("WhAt ArE YoU dOiNg?"))
+    }
+
+    @Test
+    fun `all caps which movie you want`() {
+        assertEquals("e sinima kavali?", t("WHICH MOVIE YOU WANT"))
+    }
+
+    @Test
+    fun `how are you without question mark still suggests question`() {
+        assertEquals("ela unnav?", t("how are you"))
+    }
+
+    @Test
+    fun `what about you`() {
+        assertEquals("nuvvu ela unnav?", t("What about you?"))
+    }
+
+    @Test
+    fun `do you want coffee`() {
+        assertEquals("neeku coffee kavala?", t("Do you want coffee?"))
+    }
+
+    @Test
+    fun `unknown sentence returns nothing instead of hybrid garbage`() {
+        // Must NEVER produce "which sinima nuvvu want"-style output.
+        assertEquals("", t("the quick brown fox jumps"))
+    }
+
     // ---- Style variants ----
 
     @Test

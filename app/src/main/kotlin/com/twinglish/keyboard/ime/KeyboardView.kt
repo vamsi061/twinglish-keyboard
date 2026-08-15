@@ -306,6 +306,8 @@ class KeyboardView(context: Context) : View(context) {
 
     // ---------- popup ----------
 
+    private var popupShowing = false
+
     private fun showPopup(kr: KeyRect) {
         if (!popupEnabled) return
         val host = popupHost ?: return
@@ -314,6 +316,7 @@ class KeyboardView(context: Context) : View(context) {
 
         val key = kr.key
         val kRect = kr.rect
+        val keyW = kRect.width()
         val keyH = kRect.height()
         val density = resources.displayMetrics.density
 
@@ -322,19 +325,23 @@ class KeyboardView(context: Context) : View(context) {
 
         val maxPopupW = (width - 8f * density).coerceAtLeast(1f)
 
+        // Compact popup: preview scales from the VISUAL key (1.2–1.5x width,
+        // 1.3–1.6x height) — never from the touch target.
         val popupW: Float
         val popupH: Float
         if (isOptions) {
-            popupH = keyH * 1.8f
-            popupW = (options.size * keyH * 1.05f + 16f * density).coerceAtMost(maxPopupW)
+            popupH = keyH * 1.5f
+            popupW = (options.size * keyH * 1.1f + 12f * density).coerceAtMost(maxPopupW)
         } else {
-            popupH = keyH * 1.9f
-            popupW = (keyH * 1.4f).coerceAtMost(maxPopupW)
+            popupH = keyH * 1.5f
+            popupW = (keyW * 1.35f).coerceAtLeast(keyH * 1.1f).coerceAtMost(maxPopupW)
         }
 
+        // Positioned immediately above the pressed key (small 4dp gap),
+        // clamped to stay on screen near edges.
         var left = kRect.centerX() - popupW / 2f
         left = left.coerceIn(4f, (width - popupW - 4f).coerceAtLeast(4f))
-        val top = (kRect.top - popupH - 6f * density + popupOffsetY).coerceAtLeast(2f)
+        val top = (kRect.top - popupH - 4f * density + popupOffsetY).coerceAtLeast(2f)
 
         val lp = android.widget.FrameLayout.LayoutParams(popupW.toInt(), popupH.toInt())
         lp.leftMargin = left.toInt()
@@ -347,6 +354,12 @@ class KeyboardView(context: Context) : View(context) {
             pv.showPreview(key.label)
         }
         pv.visibility = View.VISIBLE
+        popupShowing = true
+        // Fast, barely-there entrance: 90% → 100% scale with alpha, ~70ms.
+        pv.alpha = 0f
+        pv.scaleX = 0.9f
+        pv.scaleY = 0.9f
+        pv.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(70L).start()
         pv.invalidate()
     }
 
@@ -375,9 +388,14 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun hidePopup() {
-        popupView?.let { pv ->
-            if (pv.visibility == View.VISIBLE) pv.visibility = View.GONE
-        }
+        val pv = popupView ?: return
+        if (!popupShowing) return
+        popupShowing = false
+        pv.animate().cancel()
+        // Very short fade-out (~50ms); a re-show during the fade cancels it.
+        pv.animate().alpha(0f).setDuration(50L).withEndAction {
+            if (!popupShowing) pv.visibility = View.GONE
+        }.start()
     }
 
     // ---------- drawing ----------

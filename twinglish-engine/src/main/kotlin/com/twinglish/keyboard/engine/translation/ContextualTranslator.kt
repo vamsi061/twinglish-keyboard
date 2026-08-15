@@ -118,7 +118,7 @@ class ContextualTranslator(private val provider: TranslationProvider) {
             return@withContext TranslationResult(
                 input = sentence,
                 telugu = null,
-                twinglish = (prefix + restored + sep + trailingSymbols + punct).trim(),
+                twinglish = mergePunctuation((prefix + restored + sep + trailingSymbols).trim(), punct),
                 confidence = 0.7f,
                 style = style,
             )
@@ -137,17 +137,39 @@ class ContextualTranslator(private val provider: TranslationProvider) {
         val withNouns = restoreProperNouns(sentence, twinglish)
         // Emoji attaches with a space, punctuation without.
         val sep = if (trailingSymbols.isNotEmpty() && trailingSymbols.any { it != ' ' }) " " else ""
-        val finalText = (prefix + withNouns + sep + trailingSymbols + punct).trim()
+        val finalText = mergePunctuation((prefix + withNouns + sep + trailingSymbols).trim(), punct)
 
         result.copy(telugu = restored, twinglish = finalText, input = sentence)
     }
 
-    /** Restore the original casing of capitalized proper nouns in the output. */
+    /**
+     * Re-attach the user's trailing punctuation to the translation. Question
+     * rules carry their own "?" in the template, so a matching "?" is
+     * deduplicated and a different mark ("!") replaces it.
+     */
+    private fun mergePunctuation(base: String, punct: String): String {
+        if (punct.isEmpty()) return base
+        val last = base.lastOrNull()
+        return when {
+            punct.length == 1 && last == punct[0] -> base // template already ends with it
+            last == '?' && punct == "!" -> base.dropLast(1) + "!"
+            else -> base + punct
+        }
+    }
+
+    /**
+     * Restore the original casing of capitalized proper nouns in the output.
+     * Title-case words ("Hyderabad") are restored; ALL-CAPS input (accidental
+     * keyboard uppercase) is deliberately ignored so it never leaks into the
+     * Twinglish output.
+     */
     private fun restoreProperNouns(original: String, twinglish: String): String {
         var out = twinglish
         val originalWords = original.split(Regex("\\s+"))
         originalWords.forEachIndexed { idx, w ->
-            if (idx > 0 && w.length > 1 && w[0].isUpperCase() && w.all { it.isLetter() }) {
+            if (idx > 0 && w.length > 1 && w[0].isUpperCase() && w.all { it.isLetter() } &&
+                !w.all { it.isUpperCase() }
+            ) {
                 val lower = w.lowercase()
                 if (out.contains(lower, ignoreCase = true)) {
                     out = out.replaceFirst(lower, w, ignoreCase = true)
