@@ -21,6 +21,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import androidx.core.view.WindowCompat
 import androidx.core.view.isVisible
 import com.twinglish.keyboard.MainActivity
 import com.twinglish.keyboard.R
@@ -240,14 +241,11 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         symbolPage = 0
         currentSentence = ""
 
-        // Auto-capitalize only at the start of a sentence: an empty field or
-        // right after sentence-ending punctuation / a newline. Mid-sentence
-        // edits must not force the keyboard into uppercase.
-        shiftState = if (settings.autoCapitalization && editorClass == EditorClass.TEXT && atSentenceStart()) {
-            ShiftState.SHIFTED
-        } else {
-            ShiftState.LOWERCASE
-        }
+        // The keyboard ALWAYS opens in lowercase. Sentence-start
+        // capitalization is re-armed while typing (after ".!?" + space and
+        // after a newline, when autoCapitalization is enabled) rather than
+        // at field open, so the keys never sit stuck in uppercase.
+        shiftState = ShiftState.LOWERCASE
         twinglishActive = settings.twinglishEnabled
         if (::toolbar.isInitialized) {
             toolbar.translateActive = twinglishActive
@@ -367,7 +365,32 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         if (::bottomBar.isInitialized) {
             bottomBar.background = android.graphics.drawable.ColorDrawable(c.toolbarBackground)
         }
+        applyWindowColors(c)
         refreshHeight()
+    }
+
+    /**
+     * Paint the system navigation/status bars to match the keyboard surface
+     * (the nav bar sits directly under the bottom bar, so it must share its
+     * color for a seamless look). Icons flip between light/dark by luminance.
+     */
+    private fun applyWindowColors(c: KeyboardColors) {
+        runCatching {
+            val w = getWindow().window ?: return@runCatching
+            w.navigationBarColor = c.toolbarBackground
+            w.statusBarColor = c.board
+            val controller = WindowCompat.getInsetsController(w, w.decorView)
+            val lightIcons = luminance(c.toolbarBackground) > 0.5f
+            controller.isAppearanceLightNavigationBars = lightIcons
+            controller.isAppearanceLightStatusBars = lightIcons
+        }
+    }
+
+    private fun luminance(color: Int): Float {
+        val r = android.graphics.Color.red(color) / 255f
+        val g = android.graphics.Color.green(color) / 255f
+        val b = android.graphics.Color.blue(color) / 255f
+        return 0.299f * r + 0.587f * g + 0.114f * b
     }
 
     // ------------------------------------------------------------------
@@ -514,8 +537,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private fun commitSpace() {
         input.commitText(" ")
         // A space after ".!?" keeps the next sentence capitalized; anywhere
-        // else the keyboard returns to lowercase.
-        val before = input.textBeforeCursor(1).toString()
+        // else the keyboard returns to lowercase. The text is read a few
+        // chars back (the just-committed space sits right before the cursor)
+        // so the sentence-ending mark is actually found.
+        val before = input.textBeforeCursor(16).toString().trimEnd(' ')
         shiftState = if (settings.autoCapitalization && editorClass == EditorClass.TEXT &&
             before.isNotEmpty() && before.last() in ".!?"
         ) {
@@ -556,14 +581,6 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             ShiftState.CAPS_LOCK -> ShiftState.LOWERCASE
         }
         refreshLayout()
-    }
-
-    /** True when the cursor sits at the start of a sentence (or the field). */
-    private fun atSentenceStart(): Boolean {
-        if (!input.isActive) return true
-        val before = input.textBeforeCursor(64).toString()
-        val text = before.trimEnd(' ')
-        return text.isEmpty() || text.last() in ".!?\n"
     }
 
     private fun toggleSymbolMode() {
