@@ -268,9 +268,14 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private fun refreshHeight() {
         val height = computeKeyboardHeight()
         if (::root.isInitialized) {
+            // root.layoutParams is null until the view is attached to the
+            // IME window (onCreateInputView runs before that), so it must be
+            // null-checked — an NPE here kills the whole keyboard.
             val lp = root.layoutParams
-            lp.height = height
-            root.layoutParams = lp
+            if (lp != null) {
+                lp.height = height
+                root.layoutParams = lp
+            }
         }
         // Size the IME window itself so the keyboard height is honored.
         runCatching {
