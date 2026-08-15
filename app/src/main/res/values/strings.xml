@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Twinglish Keyboard</string>
+    <string name="ime_label">Twinglish Keyboard</string>
+    <string name="settings_title">Twinglish Settings</string>
+    <string name="test_title">Keyboard Test</string>
+</resources>
