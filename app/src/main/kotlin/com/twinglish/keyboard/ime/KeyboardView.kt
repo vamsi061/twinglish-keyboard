@@ -270,19 +270,24 @@ class KeyboardView(context: Context) : View(context) {
         val isOptions = popupEnabled && key.longPress.isNotEmpty()
         val options = if (isOptions) key.longPress else emptyList()
 
+        // Never wider than the screen: a wider popup would make the coerceIn
+        // below receive an empty range (min > max) and crash on edge keys.
+        val maxPopupW = (width - 8f * dp).coerceAtLeast(1f)
+
         val popupW: Float
         val popupH: Float
         if (isOptions) {
             popupH = keyH * 1.9f
-            popupW = (options.size * keyH * 1.05f + 16f * dp).coerceAtMost(contentWidth)
+            popupW = (options.size * keyH * 1.05f + 16f * dp).coerceAtMost(maxPopupW)
         } else {
             popupH = keyH * 1.9f
-            popupW = keyH * 1.5f
+            popupW = (keyH * 1.5f).coerceAtMost(maxPopupW)
         }
 
-        // Center popup over the key, keep it fully on screen.
+        // Center popup over the key, keep it fully on screen. The upper bound
+        // is clamped so it is never below the lower bound (empty range crash).
         var left = kRect.centerX() - popupW / 2f
-        left = left.coerceIn(4f, width - popupW - 4f)
+        left = left.coerceIn(4f, (width - popupW - 4f).coerceAtLeast(4f))
         val top = (kRect.top - popupH - 6f * dp + popupOffsetY).coerceAtLeast(2f)
 
         val lp = android.widget.FrameLayout.LayoutParams(popupW.toInt(), popupH.toInt())
