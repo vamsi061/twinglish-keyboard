@@ -24,8 +24,10 @@ import com.twinglish.keyboard.data.HapticMode
 import com.twinglish.keyboard.data.Settings
 import com.twinglish.keyboard.settings.SettingsActivity
 import com.twinglish.keyboard.twinglish.TwinglishController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The Twinglish keyboard: a real Android InputMethodService.
@@ -90,8 +92,13 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
         app.applicationScope.launch {
             settingsRepo.settings.collectLatest { s ->
-                settings = s
-                applySettingsToViews()
+                // Views must only be touched on the main thread — a stray
+                // background write (or touching an not-yet-created view)
+                // would take the whole IME process down.
+                withContext(Dispatchers.Main) {
+                    settings = s
+                    applySettingsToViews()
+                }
             }
         }
 
@@ -105,7 +112,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
                     state.alternatives.forEach {
                         list += SuggestionStripView.Suggestion(text = it, primary = false, source = "twinglish")
                     }
-                    strip.suggestions = list
+                    val suggestions = list
+                    withContext(Dispatchers.Main) {
+                        if (::strip.isInitialized) strip.suggestions = suggestions
+                    }
                 }
             }
         }
@@ -125,7 +135,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             onTwinglishToggle = { active -> setTwinglishActive(active) }
             onEmoji = { toggleMode(Mode.EMOJI) }
             onClipboard = { toggleMode(Mode.CLIPBOARD) }
-            onSettings = { startActivity(Intent(this@TwinglishInputMethodService, SettingsActivity::class.java)) }
+            onSettings = { openSettings() }
             onGlobe = { switchToNextIme() }
             onMic = { showVoiceHint() }
         }
@@ -278,15 +288,20 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
     private fun applySettingsToViews() {
+        // Called from onCreateInputView (main thread) and from the settings
+        // collector (switched to main thread). Guard every view: the settings
+        // emission can arrive while the input view is still being built.
         if (!::keyboardView.isInitialized) return
         val c = currentColors()
         keyboardView.colors = c
         keyboardView.popupEnabled = settings.popupPreview
-        strip.colors = c
-        toolbar.colors = c
-        toolbar.twinglishActive = twinglishActive
-        emojiPanel.colors = c
-        clipboardPanel.colors = c
+        if (::strip.isInitialized) strip.colors = c
+        if (::toolbar.isInitialized) {
+            toolbar.colors = c
+            toolbar.twinglishActive = twinglishActive
+        }
+        if (::emojiPanel.isInitialized) emojiPanel.colors = c
+        if (::clipboardPanel.isInitialized) clipboardPanel.colors = c
         refreshHeight()
     }
 
@@ -383,7 +398,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             KeyAction.LANGUAGE -> setTwinglishActive(!twinglishActive)
             KeyAction.GLOBE -> switchToNextIme()
             KeyAction.MIC -> showVoiceHint()
-            KeyAction.SETTINGS -> startActivity(Intent(this@TwinglishInputMethodService, SettingsActivity::class.java))
+            KeyAction.SETTINGS -> openSettings()
             KeyAction.TWINGLISH -> setTwinglishActive(!twinglishActive)
         }
     }
@@ -654,6 +669,14 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     // ------------------------------------------------------------------
     // misc actions
     // ------------------------------------------------------------------
+
+    private fun openSettings() {
+        // Called from the service context — the NEW_TASK flag is required
+        // or Android throws AndroidRuntimeException and kills the IME.
+        val intent = Intent(this, SettingsActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(intent) }
+    }
 
     private fun switchToNextIme() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
