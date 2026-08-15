@@ -8,5 +8,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.apk
+!apk/
+!apk/*.apk
 *.aab
 output-metadata.json
