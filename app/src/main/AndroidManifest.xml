@@ -45,5 +45,12 @@
             android:name=".test.KeyboardTestActivity"
             android:exported="false"
             android:label="@string/test_title" />
+
+        <!-- Shows the crash stack trace on screen instead of a silent stop. -->
+        <activity
+            android:name=".CrashReportActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Twinglish" />
     </application>
 </manifest>

@@ -45,9 +45,11 @@ class TwinglishApplication : Application() {
 
     /**
      * Last-resort crash capture: writes any uncaught exception to a file the
-     * user can reach (external files dir → visible over USB) and to logcat
-     * under the [TAG] tag, then hands it to the previous handler so the
-     * platform crash reporting still behaves normally.
+     * user can reach (external files dir → visible over USB), logs it under
+     * the [TAG] tag, and — most importantly — opens [CrashReportActivity]
+     * so the exact stack trace is visible on screen and copyable instead of
+     * just a "keeps stopping" dialog. The previous handler still runs so
+     * the platform crash reporting behaves normally.
      */
     private fun installCrashLogging() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
@@ -66,6 +68,12 @@ class TwinglishApplication : Application() {
                 }
                 log.appendText(entry)
                 Log.e(TAG, "Uncaught exception on ${thread.name}", throwable)
+
+                // Surface the trace on screen so it can be copied to the chat.
+                val intent = android.content.Intent(this, CrashReportActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    .putExtra(CrashReportActivity.EXTRA_TRACE, trace)
+                startActivity(intent)
             }
             previous?.uncaughtException(thread, throwable)
         }
