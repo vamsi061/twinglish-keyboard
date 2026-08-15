@@ -21,7 +21,7 @@ class ClipboardPanelView(context: Context) : LinearLayout(context) {
     var onDelete: ((Item) -> Unit)? = null
     var onBackToKeyboard: (() -> Unit)? = null
 
-    var colors: KeyboardColors = KeyboardColors.Light
+    var colors: KeyboardColors = KeyboardColors.Blue
         set(value) {
             field = value
             background = android.graphics.drawable.ColorDrawable(value.board)

@@ -7,7 +7,6 @@ import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -17,15 +16,15 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
 import com.twinglish.keyboard.R
 import kotlin.math.abs
-import kotlin.math.max
 
 /**
- * The main keyboard surface. Draws the [Key] grid with Gboard-like
- * proportions, handles touch with instant visual feedback, runs the
- * key-preview popup, long-press alternatives and backspace auto-repeat.
+ * The keyboard surface. Keys are drawn as plain centered glyphs directly on
+ * the blue board (no per-key cards); the only visible shapes are the subtle
+ * pressed overlay, the lighter ?123 / spacebar pills and the accent enter
+ * key — matching the Gboard-family look of the reference.
  *
- * Rendering is plain Canvas drawing — no recomposition per key press — so
- * key latency stays low even while the translation engine is busy.
+ * The full key cell is the touch target; the spacebar additionally supports
+ * horizontal drag for cursor movement (and long press for IME switching).
  */
 class KeyboardView(context: Context) : View(context) {
 
@@ -34,11 +33,13 @@ class KeyboardView(context: Context) : View(context) {
         fun onKeyReleased(key: Key)
         fun onLongPressStart(key: Key)
         fun onPopupDismissed(key: Key)
+        /** Horizontal spacebar drag: positive = cursor right, negative = left. */
+        fun onCursorMove(steps: Int)
     }
 
     var listener: Listener? = null
 
-    var colors: KeyboardColors = KeyboardColors.Light
+    var colors: KeyboardColors = KeyboardColors.Blue
         set(value) {
             field = value
             textPaint.color = value.text
@@ -66,25 +67,31 @@ class KeyboardView(context: Context) : View(context) {
     // Paints
     private val boardPaint = Paint()
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val keyPressedPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
     }
     private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
     }
     private var iconTint: Int = 0
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val handler = Handler(Looper.getMainLooper())
     private var pressedKeyRect: KeyRect? = null
-    private var pressedKeyIndex = -1
     private var downX = 0f
     private var downY = 0f
     private var longPressTriggered = false
     private var repeatTriggered = false
     private var popupHost: android.widget.FrameLayout? = null
     private var popupView: KeyPopupView? = null
+
+    // Spacebar drag → cursor movement
+    private var spaceDragging = false
+    private var spaceCursorStep = 0
+    private var spaceDown = false
+    private var lastCursorX = 0f
 
     private val longPressRunnable = object : Runnable {
         override fun run() {
@@ -93,6 +100,10 @@ class KeyboardView(context: Context) : View(context) {
                 repeatTriggered = true
                 listener?.onLongPressStart(k)
                 handler.post(repeatRunnable)
+            } else if (k.action == KeyAction.SPACE) {
+                // Space long press → IME switch (no repeat, no options).
+                longPressTriggered = true
+                listener?.onLongPressStart(k)
             } else if (k.longPress.isNotEmpty()) {
                 longPressTriggered = true
                 listener?.onLongPressStart(k)
@@ -129,16 +140,16 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     private fun computeGeometry(w: Float, h: Float) {
-        // Cap keyboard content width on large screens and center it.
         val maxWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 900f, resources.displayMetrics)
         contentWidth = minOf(w, maxWidth)
         contentLeft = (w - contentWidth) / 2f
 
         val padH = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f, resources.displayMetrics)
-        val gap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 3f, resources.displayMetrics)
-        val padV = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 4f, resources.displayMetrics)
+        val gap = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2f, resources.displayMetrics)
+        val padV = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 3f, resources.displayMetrics)
 
         val rowCount = rows.size
+        if (rowCount == 0) return
         val rowHeight = (h - padV * 2 - gap * (rowCount - 1)) / rowCount
 
         geometry = rows.mapIndexed { r, rowKeys ->
@@ -175,11 +186,17 @@ class KeyboardView(context: Context) : View(context) {
                 val kr = hitTest(event.x, event.y)
                 if (kr != null) {
                     pressedKeyRect = kr
-                    pressedKeyIndex = kr.key.id.hashCode()
-                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     announcePressed(kr.key)
-                    listener?.onKeyPressed(kr.key)
-                    showPopup(kr)
+                    spaceDown = kr.key.action == KeyAction.SPACE
+                    spaceDragging = false
+                    spaceCursorStep = 0
+                    lastCursorX = event.x
+                    if (kr.key.action == KeyAction.SPACE) {
+                        // Committed on release (allows swipe for cursor / long press).
+                    } else {
+                        listener?.onKeyPressed(kr.key)
+                        showPopup(kr)
+                    }
                     handler.removeCallbacks(longPressRunnable)
                     handler.postDelayed(longPressRunnable, 380L)
                     invalidate()
@@ -190,7 +207,27 @@ class KeyboardView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 val kr = pressedKeyRect ?: return true
                 if (longPressTriggered) {
-                    updateLongPressSelection(event.x, event.y)
+                    if (kr.key.action == KeyAction.SPACE) {
+                        // During IME-switch long press, ignore drags.
+                    } else {
+                        updateLongPressSelection(event.x, event.y)
+                    }
+                } else if (spaceDown && kr.key.action == KeyAction.SPACE) {
+                    // Spacebar drag → cursor movement.
+                    val stepPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 26f, resources.displayMetrics)
+                    if (abs(event.x - downX) > stepPx && !spaceDragging) {
+                        spaceDragging = true
+                        handler.removeCallbacks(longPressRunnable)
+                        hidePopup()
+                    }
+                    if (spaceDragging) {
+                        val steps = ((event.x - lastCursorX) / stepPx).toInt()
+                        if (steps != 0) {
+                            listener?.onCursorMove(steps)
+                            spaceCursorStep += steps
+                            lastCursorX += steps * stepPx
+                        }
+                    }
                 } else {
                     // Cancel press when the finger slides far off the key.
                     val centerX = kr.rect.centerX()
@@ -210,12 +247,21 @@ class KeyboardView(context: Context) : View(context) {
                 if (kr != null) {
                     handler.removeCallbacks(longPressRunnable)
                     handler.removeCallbacks(repeatRunnable)
-                    if (longPressTriggered) {
+                    if (spaceDown && kr.key.action == KeyAction.SPACE) {
+                        if (longPressTriggered) {
+                            listener?.onKeyReleased(kr.key)
+                            listener?.onPopupDismissed(kr.key)
+                        } else if (!spaceDragging) {
+                            listener?.onKeyPressed(kr.key)
+                            listener?.onKeyReleased(kr.key)
+                        } else {
+                            listener?.onKeyReleased(kr.key)
+                        }
+                    } else if (longPressTriggered) {
                         val option = selectedOption(kr, event.x)
                         listener?.onKeyReleased(kr.key)
                         listener?.onPopupDismissed(kr.key)
                         if (option != null) {
-                            // Dispatch the chosen alternative as a normal char key.
                             listener?.onKeyPressed(Key(id = "c:$option", action = KeyAction.CHAR, label = option))
                         }
                     } else if (!repeatTriggered) {
@@ -227,6 +273,8 @@ class KeyboardView(context: Context) : View(context) {
                     pressedKeyRect = null
                     repeatTriggered = false
                     longPressTriggered = false
+                    spaceDown = false
+                    spaceDragging = false
                     invalidate()
                 }
                 return true
@@ -251,6 +299,8 @@ class KeyboardView(context: Context) : View(context) {
         pressedKeyRect = null
         repeatTriggered = false
         longPressTriggered = false
+        spaceDown = false
+        spaceDragging = false
         invalidate()
     }
 
@@ -265,30 +315,26 @@ class KeyboardView(context: Context) : View(context) {
         val key = kr.key
         val kRect = kr.rect
         val keyH = kRect.height()
-        val dp = resources.displayMetrics.density
+        val density = resources.displayMetrics.density
 
         val isOptions = popupEnabled && key.longPress.isNotEmpty()
         val options = if (isOptions) key.longPress else emptyList()
 
-        // Never wider than the screen: a wider popup would make the coerceIn
-        // below receive an empty range (min > max) and crash on edge keys.
-        val maxPopupW = (width - 8f * dp).coerceAtLeast(1f)
+        val maxPopupW = (width - 8f * density).coerceAtLeast(1f)
 
         val popupW: Float
         val popupH: Float
         if (isOptions) {
-            popupH = keyH * 1.9f
-            popupW = (options.size * keyH * 1.05f + 16f * dp).coerceAtMost(maxPopupW)
+            popupH = keyH * 1.8f
+            popupW = (options.size * keyH * 1.05f + 16f * density).coerceAtMost(maxPopupW)
         } else {
             popupH = keyH * 1.9f
-            popupW = (keyH * 1.5f).coerceAtMost(maxPopupW)
+            popupW = (keyH * 1.4f).coerceAtMost(maxPopupW)
         }
 
-        // Center popup over the key, keep it fully on screen. The upper bound
-        // is clamped so it is never below the lower bound (empty range crash).
         var left = kRect.centerX() - popupW / 2f
         left = left.coerceIn(4f, (width - popupW - 4f).coerceAtLeast(4f))
-        val top = (kRect.top - popupH - 6f * dp + popupOffsetY).coerceAtLeast(2f)
+        val top = (kRect.top - popupH - 6f * density + popupOffsetY).coerceAtLeast(2f)
 
         val lp = android.widget.FrameLayout.LayoutParams(popupW.toInt(), popupH.toInt())
         lp.leftMargin = left.toInt()
@@ -298,7 +344,7 @@ class KeyboardView(context: Context) : View(context) {
         if (isOptions) {
             pv.showOptions(options, 0)
         } else {
-            pv.showPreview(if (key.label.isNotEmpty()) key.label else "")
+            pv.showPreview(key.label)
         }
         pv.visibility = View.VISIBLE
         pv.invalidate()
@@ -307,7 +353,6 @@ class KeyboardView(context: Context) : View(context) {
     private fun updateLongPressSelection(x: Float, y: Float) {
         val pv = popupView ?: return
         val kr = pressedKeyRect ?: return
-        val host = popupHost ?: return
         if (pv.visibility != View.VISIBLE) return
         val popupRect = RectF(pv.left.toFloat(), pv.top.toFloat(), pv.right.toFloat(), pv.bottom.toFloat())
         val options = kr.key.longPress
@@ -337,48 +382,111 @@ class KeyboardView(context: Context) : View(context) {
 
     // ---------- drawing ----------
 
+    private fun dp(value: Float): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics)
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(colors.board)
 
-        // Subtle top divider under the suggestion strip.
-        val dividerH = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, resources.displayMetrics)
+        val dividerH = dp(1f)
         boardPaint.color = colors.boardTopLine
         canvas.drawRect(0f, 0f, width.toFloat(), dividerH, boardPaint)
 
-        val corner = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 5f, resources.displayMetrics)
-        val labelSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 21f, resources.displayMetrics)
-        val hintSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 10f, resources.displayMetrics)
+        val corner = dp(6f)
+        val pillCorner = dp(8f)
+        val spaceCorner = dp(10f)
+        val inset = dp(1.5f)
+        val labelSize = dp(19f)
+        val numberSize = dp(17f)
+        val smallSize = dp(17f)
+        val hintSize = dp(9f)
+        val iconSize = dp(22f)
 
         for (row in geometry) {
             for (kr in row) {
                 val key = kr.key
                 val rect = kr.rect
-                val isPressed = kr === pressedKeyRect
-                keyPaint.color = if (isPressed) colors.keyPressed else colors.key
-                canvas.drawRoundRect(rect, corner, corner, keyPaint)
+                val pressed = kr === pressedKeyRect
 
+                when {
+                    key.action == KeyAction.ENTER -> {
+                        keyPaint.color = colors.enterKey
+                        canvas.drawRoundRect(
+                            RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                            pillCorner, pillCorner, keyPaint,
+                        )
+                        if (pressed) {
+                            keyPaint.color = colors.keyPressed
+                            canvas.drawRoundRect(
+                                RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                                pillCorner, pillCorner, keyPaint,
+                            )
+                        }
+                    }
+                    key.id == "mode" -> {
+                        keyPaint.color = colors.actionKey
+                        canvas.drawRoundRect(
+                            RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                            pillCorner, pillCorner, keyPaint,
+                        )
+                        if (pressed) {
+                            keyPaint.color = colors.keyPressed
+                            canvas.drawRoundRect(
+                                RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                                pillCorner, pillCorner, keyPaint,
+                            )
+                        }
+                    }
+                    key.id == "space" -> {
+                        keyPaint.color = colors.actionKey
+                        canvas.drawRoundRect(
+                            RectF(rect.left + inset * 3, rect.top + inset * 2, rect.right - inset * 3, rect.bottom - inset * 2),
+                            spaceCorner, spaceCorner, keyPaint,
+                        )
+                        if (pressed) {
+                            keyPaint.color = colors.keyPressed
+                            canvas.drawRoundRect(
+                                RectF(rect.left + inset * 3, rect.top + inset * 2, rect.right - inset * 3, rect.bottom - inset * 2),
+                                spaceCorner, spaceCorner, keyPaint,
+                            )
+                        }
+                    }
+                    pressed -> {
+                        keyPaint.color = colors.keyPressed
+                        canvas.drawRoundRect(
+                            RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                            corner, corner, keyPaint,
+                        )
+                    }
+                }
+
+                val isNumberRow = key.label.isNotEmpty() && key.label[0].isDigit() && key.longPress.none { it.length > 1 }
                 if (key.icon != 0) {
-                    drawIcon(canvas, key.icon, rect, isPressed)
+                    drawIcon(canvas, key.icon, rect, pressed, iconSize)
                 } else if (key.label.isNotEmpty()) {
-                    textPaint.textSize = labelSize
-                    val baseline = (rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2f)
+                    val size = when {
+                        key.id == "comma" || key.id == "period" || key.id == "mode" -> smallSize
+                        isNumberRow -> numberSize
+                        else -> labelSize
+                    }
+                    textPaint.textSize = size
+                    val baseline = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2f
                     canvas.drawText(key.label, rect.centerX(), baseline, textPaint)
                 }
                 if (key.labelTop != null && key.label.isNotEmpty()) {
                     hintPaint.textSize = hintSize
-                    val y = rect.top + rect.height() * 0.30f
+                    val y = rect.top + rect.height() * 0.26f + hintSize * 0.4f
                     canvas.drawText(key.labelTop, rect.centerX(), y, hintPaint)
                 }
             }
         }
     }
 
-    private fun drawIcon(canvas: Canvas, resId: Int, rect: RectF, pressed: Boolean) {
+    private fun drawIcon(canvas: Canvas, resId: Int, rect: RectF, pressed: Boolean, size: Float) {
         val d: Drawable = ContextCompat.getDrawable(context, resId) ?: return
         val tinted = DrawableCompat.wrap(d).mutate()
         DrawableCompat.setTint(tinted, if (pressed) colors.text else iconTint)
-        val size = rect.height() * 0.42f
         val left = rect.centerX() - size / 2f
         val top = rect.centerY() - size / 2f
         tinted.setBounds(left.toInt(), top.toInt(), (left + size).toInt(), (top + size).toInt())
@@ -400,6 +508,8 @@ class KeyboardView(context: Context) : View(context) {
         pressedKeyRect = null
         longPressTriggered = false
         repeatTriggered = false
+        spaceDown = false
+        spaceDragging = false
         invalidate()
     }
 }

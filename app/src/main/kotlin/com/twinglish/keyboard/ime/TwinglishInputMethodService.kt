@@ -11,16 +11,22 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.text.InputType
+import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import androidx.core.view.isVisible
+import com.twinglish.keyboard.MainActivity
+import com.twinglish.keyboard.R
 import com.twinglish.keyboard.TwinglishApplication
 import com.twinglish.keyboard.data.HapticMode
+import com.twinglish.keyboard.data.KeyboardTheme
 import com.twinglish.keyboard.data.Settings
 import com.twinglish.keyboard.settings.SettingsActivity
 import com.twinglish.keyboard.twinglish.TwinglishController
@@ -55,6 +61,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private lateinit var contentFrame: FrameLayout
     private lateinit var emojiPanel: EmojiPanelView
     private lateinit var clipboardPanel: ClipboardPanelView
+    private lateinit var bottomBar: FrameLayout
 
     // State
     private var symbolPage = 0
@@ -132,11 +139,13 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         }
 
         toolbar = ToolbarView(this).apply {
-            onTwinglishToggle = { active -> setTwinglishActive(active) }
+            onGrid = { openApp() }
             onEmoji = { toggleMode(Mode.EMOJI) }
-            onClipboard = { toggleMode(Mode.CLIPBOARD) }
+            onEmojiLongPress = { toggleMode(Mode.CLIPBOARD) }
+            onGif = { showVoiceHint("GIF picker coming in a future update") }
             onSettings = { openSettings() }
-            onGlobe = { switchToNextIme() }
+            onTranslate = { setTwinglishActive(!twinglishActive) }
+            onTheme = { cycleTheme() }
             onMic = { showVoiceHint() }
         }
         strip = SuggestionStripView(this).apply {
@@ -163,11 +172,35 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         emojiPanel.visibility = View.GONE
         clipboardPanel.visibility = View.GONE
 
+        // Slim bottom bar: keyboard switch (left) + collapse chevron (right).
+        // Its bottom padding carries the system navigation inset.
+        bottomBar = FrameLayout(this).apply {
+            val globe = ImageButton(context).apply {
+                setImageResource(R.drawable.ic_globe)
+                contentDescription = "Switch keyboard"
+                background = null
+                scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(14), dp(4), dp(14), dp(4))
+                setOnClickListener { switchToNextIme() }
+            }
+            val chevron = ImageButton(context).apply {
+                setImageResource(R.drawable.ic_chevron_down)
+                contentDescription = "Hide keyboard"
+                background = null
+                scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(14), dp(4), dp(14), dp(4))
+                setOnClickListener { requestHideSelf(0) }
+            }
+            addView(globe, FrameLayout.LayoutParams(dp(48), dp(32), Gravity.START or Gravity.CENTER_VERTICAL))
+            addView(chevron, FrameLayout.LayoutParams(dp(48), dp(32), Gravity.END or Gravity.CENTER_VERTICAL))
+        }
+
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, dp(40)))
+            addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
             addView(strip, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
             addView(contentFrame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(bottomBar, LinearLayout.LayoutParams(MATCH_PARENT, dp(32)))
         }
 
         root = FrameLayout(this).apply {
@@ -176,7 +209,15 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             addView(popupOverlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
 
-        keyboardView.popupOffsetY = dp(84).toFloat()
+        // Keep the keyboard above the system navigation bar.
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            if (::bottomBar.isInitialized) {
+                bottomBar.setPadding(0, 0, 0, insets.systemWindowInsetBottom)
+            }
+            insets
+        }
+
+        keyboardView.popupOffsetY = dp(92).toFloat()
         applySettingsToViews()
         refreshLayout()
         return root
@@ -198,7 +239,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             shiftState = ShiftState.OFF
         }
         twinglishActive = settings.twinglishEnabled
-        toolbar.twinglishActive = twinglishActive
+        if (::toolbar.isInitialized) {
+            toolbar.translateActive = twinglishActive
+            toolbar.twinglishActive = twinglishActive
+        }
 
         if (editorClass == EditorClass.NUMBER || editorClass == EditorClass.PHONE) {
             mode = Mode.SYMBOLS
@@ -259,10 +303,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private fun computeKeyboardHeight(): Int {
         val dm = resources.displayMetrics
         val portrait = dm.heightPixels > dm.widthPixels
-        val baseDp = if (portrait) dm.heightPixels / dm.density * 0.42f else dm.widthPixels / dm.density * 0.48f
-        val clamped = baseDp.coerceIn(if (portrait) 230f else 150f, if (portrait) 430f else 280f)
+        val baseDp = if (portrait) dm.heightPixels / dm.density * 0.44f else dm.widthPixels / dm.density * 0.48f
+        val clamped = baseDp.coerceIn(if (portrait) 260f else 160f, if (portrait) 470f else 300f)
         val percent = (settings.keyboardHeightPercent.coerceIn(50, 150)) / 100f
-        return (clamped * percent * dm.density).toInt().coerceAtLeast(dp(120))
+        return (clamped * percent * dm.density).toInt().coerceAtLeast(dp(140))
     }
 
     private fun refreshHeight() {
@@ -286,10 +330,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun currentColors(): KeyboardColors =
         when (settings.theme) {
-            com.twinglish.keyboard.data.KeyboardTheme.LIGHT -> KeyboardColors.Light
-            com.twinglish.keyboard.data.KeyboardTheme.DARK -> KeyboardColors.Dark
-            com.twinglish.keyboard.data.KeyboardTheme.SYSTEM ->
-                if (isNightMode()) KeyboardColors.Dark else KeyboardColors.Light
+            KeyboardTheme.LIGHT -> KeyboardColors.Blue
+            KeyboardTheme.DARK -> KeyboardColors.BlueDark
+            KeyboardTheme.SYSTEM ->
+                if (isNightMode()) KeyboardColors.BlueDark else KeyboardColors.Blue
         }
 
     private fun isNightMode(): Boolean =
@@ -310,6 +354,9 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         }
         if (::emojiPanel.isInitialized) emojiPanel.colors = c
         if (::clipboardPanel.isInitialized) clipboardPanel.colors = c
+        if (::bottomBar.isInitialized) {
+            bottomBar.background = android.graphics.drawable.ColorDrawable(c.toolbarBackground)
+        }
         refreshHeight()
     }
 
@@ -377,15 +424,19 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         override fun onLongPressStart(key: Key) {
             if (key.action == KeyAction.BACKSPACE) {
                 repeatActive = true
-            } else if (key.id == "space") {
-                switchToNextIme()
-            } else if (key.id == "mode") {
+            } else if (key.id == "space" || key.id == "mode") {
                 switchToNextIme()
             }
         }
 
         override fun onPopupDismissed(key: Key) {
             repeatActive = false
+        }
+
+        override fun onCursorMove(steps: Int) {
+            // Spacebar horizontal drag → move the cursor left/right.
+            val keyCode = if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
+            repeat(kotlin.math.abs(steps)) { input.sendKey(keyCode) }
         }
     }
 
@@ -497,23 +548,35 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun setTwinglishActive(active: Boolean) {
         twinglishActive = active
-        if (::toolbar.isInitialized) toolbar.twinglishActive = active
+        if (::toolbar.isInitialized) {
+            toolbar.translateActive = active
+            toolbar.twinglishActive = active
+        }
         updateSuggestions(currentSentence)
     }
 
     private fun refreshLayout() {
         if (!::keyboardView.isInitialized) return
+        val enter = enterIcon()
+        val shiftIcon = when (shiftState) {
+            ShiftState.OFF -> R.drawable.ic_shift
+            ShiftState.ONCE -> R.drawable.ic_shift_active
+            ShiftState.LOCK -> R.drawable.ic_shift_caps
+        }
         val rows = when (mode) {
-            Mode.LETTERS -> KeyboardLayouts.letters(shiftState != ShiftState.OFF, symbolMode = false)
-            Mode.SYMBOLS -> KeyboardLayouts.symbols(symbolPage)
-            Mode.EMOJI -> KeyboardLayouts.letters(false, symbolMode = false)
-            Mode.CLIPBOARD -> KeyboardLayouts.letters(false, symbolMode = false)
+            Mode.LETTERS -> KeyboardLayouts.letters(shiftState != ShiftState.OFF, symbolMode = false, enterIcon = enter, shiftIcon = shiftIcon)
+            Mode.SYMBOLS -> KeyboardLayouts.symbols(symbolPage, enterIcon = enter)
+            Mode.EMOJI -> KeyboardLayouts.letters(false, symbolMode = false, enterIcon = enter, shiftIcon = R.drawable.ic_shift)
+            Mode.CLIPBOARD -> KeyboardLayouts.letters(false, symbolMode = false, enterIcon = enter, shiftIcon = R.drawable.ic_shift)
         }
         keyboardView.setLayout(rows)
         emojiPanel.isVisible = mode == Mode.EMOJI
         clipboardPanel.isVisible = mode == Mode.CLIPBOARD
         keyboardView.isVisible = mode == Mode.LETTERS || mode == Mode.SYMBOLS
-        toolbar.twinglishActive = twinglishActive
+        if (::toolbar.isInitialized) {
+            toolbar.translateActive = twinglishActive
+            toolbar.twinglishActive = twinglishActive
+        }
     }
 
     // ------------------------------------------------------------------
@@ -695,9 +758,32 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         imm.switchToNextInputMethod(token, true)
     }
 
-    private fun showVoiceHint() {
-        // Voice input is deliberately deferred; explain instead of faking it.
-        android.widget.Toast.makeText(this, "Voice input coming in a future update", android.widget.Toast.LENGTH_SHORT).show()
+    private fun showVoiceHint(message: String = "Voice input coming in a future update") {
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun openApp() {
+        val intent = Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { startActivity(intent) }
+    }
+
+    private fun cycleTheme() {
+        val next = when (settings.theme) {
+            KeyboardTheme.SYSTEM -> KeyboardTheme.LIGHT
+            KeyboardTheme.LIGHT -> KeyboardTheme.DARK
+            KeyboardTheme.DARK -> KeyboardTheme.SYSTEM
+        }
+        settingsRepo.updateAsync { it.copy(theme = next) }
+    }
+
+    private fun enterIcon(): Int = when (enterActionLabel) {
+        "Go" -> R.drawable.ic_go
+        "Search" -> R.drawable.ic_search
+        "Send" -> R.drawable.ic_send
+        "Next" -> R.drawable.ic_next
+        "Done" -> R.drawable.ic_done
+        else -> R.drawable.ic_enter
     }
 
     private fun dp(value: Int): Int =

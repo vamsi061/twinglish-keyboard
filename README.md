@@ -20,9 +20,12 @@ working fully offline.
 
 - **Real system keyboard** — registered IME with `BIND_INPUT_METHOD`, works
   in every app, no copy/paste needed.
-- **Gboard-style UI** — QWERTY with adaptive proportions, rounded keys,
-  key popup preview, long-press alternatives, haptics, light/dark/system
-  themes, landscape + tablet layouts, adaptive key height.
+- **Gboard-style UI** — flat blue keyboard matching the Gboard look:
+  always-visible number row, flat keys with pressed overlay, space/action
+  pills, accent-colored enter key (search/done/send/next/go icons), a
+  7-icon toolbar with mic circle, key popup preview, long-press
+  alternatives, haptics, light/dark/system themes, landscape + tablet
+  layouts, adaptive key height, and spacebar cursor drag.
 - **Suggestion strip** — English word suggestions, or Twinglish sentence
   translation while you type. Tap to apply; your text is never replaced
   without you asking.

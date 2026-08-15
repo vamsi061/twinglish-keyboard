@@ -6,6 +6,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -13,10 +14,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 /**
- * The Gboard-style suggestion strip. Holds up to [MAX_ITEMS] chips; in
- * Twinglish mode the primary translation chip is emphasized with a tinted
- * pill. Chips are simple TextViews inside a RecyclerView for smooth
- * scrolling.
+ * The Gboard-style suggestion strip: plain text suggestions on the blue
+ * surface — no cards, no pills. The primary suggestion gets a subtle rounded
+ * highlight only. Updates crossfade quickly instead of flashing.
  */
 class SuggestionStripView(context: Context) : FrameLayout(context) {
 
@@ -24,7 +24,7 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
 
     var onSuggestionClicked: ((Suggestion) -> Unit)? = null
 
-    var colors: KeyboardColors = KeyboardColors.Light
+    var colors: KeyboardColors = KeyboardColors.Blue
         set(value) {
             field = value
             background = android.graphics.drawable.ColorDrawable(value.stripBackground)
@@ -33,8 +33,10 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
 
     var suggestions: List<Suggestion> = emptyList()
         set(value) {
+            val old = field
             field = value
-            adapter?.submitList(value)
+            if (old == value) return
+            crossfade { adapter?.submitList(value) }
         }
 
     private val adapter: ChipAdapter? by lazy {
@@ -52,7 +54,8 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
             layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
             setHasFixedSize(true)
             clipToPadding = false
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(dp(10), 0, dp(10), 0)
+            overScrollMode = View.OVER_SCROLL_NEVER
         }
         addView(
             recycler,
@@ -65,8 +68,20 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
         background = android.graphics.drawable.ColorDrawable(colors.stripBackground)
     }
 
+    /** Quick alpha dip + swap so the row never flashes. */
+    private fun crossfade(swap: () -> Unit) {
+        recycler.animate().cancel()
+        recycler.alpha = 0.35f
+        recycler.animate()
+            .alpha(1f)
+            .setDuration(130L)
+            .setInterpolator(DecelerateInterpolator())
+            .withStartAction(swap)
+            .start()
+    }
+
     private class ChipAdapter : RecyclerView.Adapter<ChipAdapter.VH>() {
-        var colors: KeyboardColors = KeyboardColors.Light
+        var colors: KeyboardColors = KeyboardColors.Blue
         var onClick: ((Suggestion) -> Unit)? = null
         private var items: List<Suggestion> = emptyList()
 
@@ -80,12 +95,13 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val tv = TextView(parent.context).apply {
                 gravity = Gravity.CENTER
-                typeface = Typeface.DEFAULT
+                typeface = Typeface.create("sans-serif", Typeface.NORMAL)
                 isClickable = true
                 isFocusable = true
-                textSize = 16f
+                textSize = 15f
                 maxLines = 1
                 includeFontPadding = false
+                setTextColor(colors.suggestionText)
             }
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -106,19 +122,16 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
             val tv = holder.tv
             tv.text = s.text
             tv.setTextColor(colors.suggestionText)
-            tv.setBackgroundResource(0)
+            tv.setTypeface(null, Typeface.NORMAL)
             if (s.primary) {
-                val chipColor = colors.chipSelectedBackground
                 tv.background = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = tv.resources.displayMetrics.density * 18f
-                    setColor(chipColor)
+                    cornerRadius = tv.resources.displayMetrics.density * 14f
+                    setColor(this@ChipAdapter.colors.suggestionHighlight)
                 }
-                tv.setTypeface(null, Typeface.BOLD)
-                tv.setTextColor(colors.accent)
-                tv.setPadding(dp(tv, 16), dp(tv, 7), dp(tv, 16), dp(tv, 7))
+                tv.setPadding(dp(tv, 14), dp(tv, 5), dp(tv, 14), dp(tv, 5))
             } else {
-                tv.setTypeface(null, Typeface.NORMAL)
-                tv.setPadding(dp(tv, 10), dp(tv, 7), dp(tv, 10), dp(tv, 7))
+                tv.background = null
+                tv.setPadding(dp(tv, 9), dp(tv, 5), dp(tv, 9), dp(tv, 5))
             }
             tv.setOnClickListener { onClick?.invoke(s) }
         }

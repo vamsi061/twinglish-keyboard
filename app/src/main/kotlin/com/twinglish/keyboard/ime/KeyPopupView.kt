@@ -8,10 +8,9 @@ import android.util.TypedValue
 import android.view.View
 
 /**
- * The temporary key-preview popup. Shows a single enlarged character (normal
- * press) or a row of long-press alternatives with a sliding highlight.
- * Drawn by the keyboard itself so it appears instantly and follows the
- * pressed key.
+ * The temporary key-preview popup: a white rounded bubble with a blue glyph
+ * (like the Gboard preview) or a row of long-press alternatives with a
+ * sliding highlight.
  */
 class KeyPopupView(context: Context) : View(context) {
 
@@ -19,16 +18,17 @@ class KeyPopupView(context: Context) : View(context) {
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
     }
     private val highlightPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    var colors: KeyboardColors = KeyboardColors.Light
+    var colors: KeyboardColors = KeyboardColors.Blue
         set(value) {
             field = value
-            bgPaint.color = value.key
-            borderPaint.color = value.keyPressed
-            highlightPaint.color = value.chipSelectedBackground
-            textPaint.color = value.text
+            bgPaint.color = value.popupBackground
+            borderPaint.color = value.boardTopLine
+            highlightPaint.color = value.accent
+            textPaint.color = value.popupText
             invalidate()
         }
 
@@ -66,15 +66,14 @@ class KeyPopupView(context: Context) : View(context) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
-        val radius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 6f, resources.displayMetrics)
+        val radius = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 8f, resources.displayMetrics)
 
-        // A subtle lower "shadow" rect offset downward.
         borderPaint.strokeWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1f, resources.displayMetrics)
         canvas.drawRoundRect(RectF(0f, 0f, w, h), radius, radius, bgPaint)
         canvas.drawRoundRect(RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f), radius, radius, borderPaint)
 
         if (!isOptions) {
-            textPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 30f, resources.displayMetrics)
+            textPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 28f, resources.displayMetrics)
             val baseline = (h - (textPaint.descent() + textPaint.ascent())) / 2f
             canvas.drawText(singleText, w / 2f, baseline, textPaint)
         } else {
@@ -84,7 +83,7 @@ class KeyPopupView(context: Context) : View(context) {
                 if (i == highlightedIndex) {
                     canvas.drawRoundRect(
                         RectF(left + 2f, 2f, left + cell - 2f, h - 2f),
-                        radius, radius, highlightPaint
+                        radius, radius, highlightPaint,
                     )
                 }
                 textPaint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 24f, resources.displayMetrics)
