@@ -214,7 +214,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         super.onFinishInput()
         input.detach()
         controller.clear()
-        keyboardView.cancelPendingInput()
+        // The system can start/finish input BEFORE onCreateInputView has ever
+        // run (e.g. right after the IME is enabled), so the input view may
+        // not exist yet. Never touch it unconditionally here.
+        if (::keyboardView.isInitialized) keyboardView.cancelPendingInput()
     }
 
     override fun onDestroy() {
@@ -489,7 +492,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun setTwinglishActive(active: Boolean) {
         twinglishActive = active
-        toolbar.twinglishActive = active
+        if (::toolbar.isInitialized) toolbar.twinglishActive = active
         updateSuggestions(currentSentence)
     }
 
@@ -532,6 +535,8 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     }
 
     private fun updateSuggestions(sentence: String) {
+        // May be reached from onUpdateSelection before the input view exists.
+        if (!::strip.isInitialized) return
         if (!translationAllowed) {
             // English mode: simple prefix suggestions for the current word.
             if (editorClass != EditorClass.TEXT) {
