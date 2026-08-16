@@ -33,4 +33,8 @@ data class Key(
     val longPress: List<String> = emptyList(),
     val icon: Int = 0,          // drawable resource for icon keys
     val contentDescription: String? = null,
+    /** Draw a shaded pill behind this key while active (e.g. shift on). */
+    val active: Boolean = false,
+    /** Stronger shade for the active pill (e.g. CAPS_LOCK vs one-shot shift). */
+    val activeStrong: Boolean = false,
 )

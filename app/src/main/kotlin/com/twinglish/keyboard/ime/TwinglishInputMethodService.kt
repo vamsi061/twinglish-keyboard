@@ -711,7 +711,13 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             ShiftState.CAPS_LOCK -> R.drawable.ic_shift_caps
         }
         val rows = when (mode) {
-            Mode.LETTERS -> KeyboardLayouts.letters(shiftState != ShiftState.LOWERCASE, symbolMode = false, enterIcon = enter, shiftIcon = shiftIcon)
+            Mode.LETTERS -> KeyboardLayouts.letters(
+                shiftState != ShiftState.LOWERCASE,
+                symbolMode = false,
+                enterIcon = enter,
+                shiftIcon = shiftIcon,
+                capsLock = shiftState == ShiftState.CAPS_LOCK,
+            )
             Mode.SYMBOLS -> KeyboardLayouts.symbols(symbolPage, enterIcon = enter)
             Mode.EMOJI -> KeyboardLayouts.letters(false, symbolMode = false, enterIcon = enter, shiftIcon = R.drawable.ic_shift)
             Mode.CLIPBOARD -> KeyboardLayouts.letters(false, symbolMode = false, enterIcon = enter, shiftIcon = R.drawable.ic_shift)

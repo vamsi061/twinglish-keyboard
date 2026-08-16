@@ -69,6 +69,7 @@ object KeyboardLayouts {
         symbolMode: Boolean,
         enterIcon: Int = R.drawable.ic_enter,
         shiftIcon: Int = R.drawable.ic_shift,
+        capsLock: Boolean = false,
     ): List<List<Key>> {
         val source = if (shifted) LETTERS_UPPERCASE else LETTERS_LOWERCASE
         val rows = mutableListOf<List<Key>>()
@@ -81,7 +82,14 @@ object KeyboardLayouts {
         )
         rows.add(
             buildList {
-                add(Key(id = "shift", action = KeyAction.SHIFT, icon = shiftIcon, contentDescription = "Shift"))
+                add(Key(
+                    id = "shift",
+                    action = KeyAction.SHIFT,
+                    icon = shiftIcon,
+                    active = shifted,
+                    activeStrong = capsLock,
+                    contentDescription = "Shift",
+                ))
                 source[2].forEach { add(letterKey(it)) }
                 add(Key(id = "backspace", action = KeyAction.BACKSPACE, icon = R.drawable.ic_backspace, contentDescription = "Delete"))
             }

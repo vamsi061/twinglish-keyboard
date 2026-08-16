@@ -470,6 +470,22 @@ class KeyboardView(context: Context) : View(context) {
                             )
                         }
                     }
+                    key.active -> {
+                        // Shaded pill inside the key while active (shift on):
+                        // lighter for one-shot SHIFT, stronger for CAPS_LOCK.
+                        keyPaint.color = if (key.activeStrong) colors.enterKey else colors.actionKey
+                        canvas.drawRoundRect(
+                            RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                            pillCorner, pillCorner, keyPaint,
+                        )
+                        if (pressed) {
+                            keyPaint.color = colors.keyPressed
+                            canvas.drawRoundRect(
+                                RectF(rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset),
+                                pillCorner, pillCorner, keyPaint,
+                            )
+                        }
+                    }
                     pressed -> {
                         keyPaint.color = colors.keyPressed
                         canvas.drawRoundRect(
