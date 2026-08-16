@@ -58,6 +58,9 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private lateinit var popupOverlay: FrameLayout
     private lateinit var toolbar: ToolbarView
     private lateinit var strip: SuggestionStripView
+    private lateinit var editorPanel: android.widget.LinearLayout
+    private lateinit var editorCaption: android.widget.TextView
+    private lateinit var editorField: android.widget.EditText
     private lateinit var keyboardView: KeyboardView
     private lateinit var contentFrame: FrameLayout
     private lateinit var emojiPanel: EmojiPanelView
@@ -76,6 +79,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     /** (sourceSentence, committedSuggestion) awaiting possible user edit. */
     private var pendingCorrection: Pair<String, String>? = null
+
+    /** Inline correction editor state (opened by long-pressing a suggestion). */
+    private var editorMode = false
+    private var pendingEdit: Pair<String, String>? = null
 
     /** Explicit keyboard shift state machine. */
     private enum class ShiftState { LOWERCASE, SHIFTED, CAPS_LOCK }
@@ -184,6 +191,52 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         emojiPanel.visibility = View.GONE
         clipboardPanel.visibility = View.GONE
 
+        // Inline correction editor — shown when the user long-presses a
+        // Twinglish suggestion. Lives INSIDE the IME window (never a dialog,
+        // which can fail with BadTokenException from a service context). The
+        // field is driven programmatically so it never steals the host
+        // editor's input connection.
+        editorPanel = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            visibility = View.GONE
+            setBackgroundColor(currentColors().stripBackground)
+            editorCaption = android.widget.TextView(context).apply {
+                textSize = 11f
+                setTextColor(currentColors().hint)
+                maxLines = 1
+                setPadding(dp(14), dp(2), dp(14), 0)
+            }
+            editorField = android.widget.EditText(context).apply {
+                setSingleLine(true)
+                textSize = 16f
+                setTextColor(currentColors().text)
+                setHintTextColor(currentColors().hint)
+                setPadding(dp(14), dp(2), dp(14), dp(2))
+                // Never take focus or the system input connection — the
+                // keyboard stays attached to the host editor the whole time.
+                isFocusable = false
+                isFocusableInTouchMode = false
+                // Tap-to-position the caret (selection is managed manually).
+                setOnTouchListener { v, ev ->
+                    if (ev.action == android.view.MotionEvent.ACTION_UP) {
+                        val field = v as android.widget.EditText
+                        val width = field.width.toFloat().coerceAtLeast(1f)
+                        val frac = (ev.x / width).coerceIn(0f, 1f)
+                        field.setSelection((frac * field.text.length).toInt())
+                    }
+                    true
+                }
+            }
+            val row = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                addView(editorField, android.widget.LinearLayout.LayoutParams(0, dp(44), 1f))
+                addView(editorButton("Save") { saveEdit() }, android.widget.LinearLayout.LayoutParams(dp(76), dp(44)))
+                addView(editorButton("Cancel") { cancelEdit() }, android.widget.LinearLayout.LayoutParams(dp(76), dp(44)))
+            }
+            addView(editorCaption, android.widget.LinearLayout.LayoutParams(MATCH_PARENT, dp(20)))
+            addView(row, android.widget.LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
+        }
+
         // Slim bottom bar: keyboard switch (left) + collapse chevron (right).
         // Its bottom padding carries the system navigation inset.
         bottomBar = FrameLayout(this).apply {
@@ -211,6 +264,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             orientation = LinearLayout.VERTICAL
             addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
             addView(strip, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
+            addView(editorPanel, LinearLayout.LayoutParams(MATCH_PARENT, dp(64)))
             addView(contentFrame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(bottomBar, LinearLayout.LayoutParams(MATCH_PARENT, dp(32)))
         }
@@ -245,6 +299,11 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         symbolPage = 0
         currentSentence = ""
         pendingCorrection = null
+        pendingEdit = null
+        if (editorMode && ::editorPanel.isInitialized) {
+            editorMode = false
+            editorPanel.isVisible = false
+        }
 
         // The keyboard ALWAYS opens in lowercase. Sentence-start
         // capitalization is re-armed while typing (after ".!?" + space and
@@ -271,6 +330,9 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         super.onFinishInput()
         input.detach()
         pendingCorrection = null
+        pendingEdit = null
+        editorMode = false
+        if (::editorPanel.isInitialized) editorPanel.isVisible = false
         controller.clear()
         // The system can start/finish input BEFORE onCreateInputView has ever
         // run (e.g. right after the IME is enabled), so the input view may
@@ -368,6 +430,12 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         }
         if (::emojiPanel.isInitialized) emojiPanel.colors = c
         if (::clipboardPanel.isInitialized) clipboardPanel.colors = c
+        if (::editorPanel.isInitialized) {
+            editorPanel.setBackgroundColor(c.stripBackground)
+            editorCaption.setTextColor(c.hint)
+            editorField.setTextColor(c.text)
+            editorField.setHintTextColor(c.hint)
+        }
         if (::bottomBar.isInitialized) {
             bottomBar.background = android.graphics.drawable.ColorDrawable(c.toolbarBackground)
         }
@@ -473,13 +541,21 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         }
 
         override fun onCursorMove(steps: Int) {
-            // Spacebar horizontal drag → move the cursor left/right.
+            // Spacebar horizontal drag → move the cursor left/right. While
+            // the correction editor is open the spacebar drag is ignored
+            // (the editor field has its own tap-to-position caret).
+            if (editorMode) return
             val keyCode = if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
             repeat(kotlin.math.abs(steps)) { input.sendKey(keyCode) }
         }
     }
 
     private fun handleKey(key: Key) {
+        // While the correction editor is open the keyboard types into it.
+        if (editorMode) {
+            handleEditorKey(key)
+            return
+        }
         when (key.action) {
             KeyAction.CHAR -> {
                 // A suggestion may have just been accepted and edited, or a
@@ -736,84 +812,119 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     }
 
     /**
-     * Long-press on a Twinglish suggestion opens the correction editor. The
-     * corrected text replaces the source English sentence in the field AND
-     * is recorded as a correction, so the engine learns the user's preferred
-     * wording and shows it first the next time the same (or a similar)
-     * sentence is typed.
+     * Long-press on a Twinglish suggestion opens the inline correction
+     * editor — a panel inside the IME window, never a dialog (dialogs shown
+     * from an InputMethodService context can fail with BadTokenException).
+     * The corrected text replaces the source English sentence in the field
+     * AND is recorded as a correction, so the engine learns the user's
+     * preferred wording and shows it first the next time the same (or a
+     * similar) sentence is typed.
      */
     private fun editSuggestion(s: SuggestionStripView.Suggestion) {
         if (s.source != "twinglish" || !translationAllowed || !input.isActive) return
         val source = currentSentence
         if (source.isBlank()) return
-
-        val density = resources.displayMetrics.density
-        val pad = (16 * density).toInt()
-
-        val caption = android.widget.TextView(this).apply {
-            text = "Original: $source"
-            setTextColor(android.graphics.Color.parseColor("#607D8B"))
-            textSize = 13f
-            setPadding(pad, dp(6), pad, 0)
-        }
-        val editor = android.widget.EditText(this).apply {
-            setText(s.text)
-            setSelection(s.text.length)
-            setSingleLine(true)
-            textSize = 17f
-            setPadding(pad, dp(8), pad, dp(6))
-        }
-        val body = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            addView(caption)
-            addView(editor)
-        }
-
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Correct translation")
-            .setView(body)
-            .create()
-        dialog.setButton(android.app.AlertDialog.BUTTON_POSITIVE, "Save") { _, _ ->
-            val corrected = editor.text.toString().trim()
-            if (corrected.isEmpty()) return@setButton
-            dialog.dismiss()
-            // While the dialog was up, the input connection was attached to
-            // the dialog's own EditText. After it closes, the host editor
-            // regains focus and the connection returns — wait for that,
-            // re-attach, then apply the correction. Retries cover slow
-            // focus hand-offs; if it never returns, fall back to clipboard.
-            root.postDelayed(
-                object : Runnable {
-                    var attempts = 0
-                    override fun run() {
-                        attempts++
-                        input.attach(currentInputConnection)
-                        if (input.isActive) {
-                            commitEditedSuggestion(source, s.text, corrected)
-                        } else if (attempts < 5) {
-                            root.postDelayed(this, 100)
-                        } else {
-                            runCatching {
-                                clipboardManager.setPrimaryClip(
-                                    android.content.ClipData.newPlainText("twinglish", corrected)
-                                )
-                            }
-                            android.widget.Toast.makeText(
-                                this@TwinglishInputMethodService,
-                                "Correction copied — paste it to apply",
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    }
-                },
-                150,
-            )
-        }
-        dialog.setButton(android.app.AlertDialog.BUTTON_NEGATIVE, "Cancel") { _, _ ->
-            dialog.dismiss()
-        }
-        runCatching { dialog.show() }
+        pendingEdit = source to s.text
+        editorCaption.text = "Original: $source"
+        editorField.setText(s.text)
+        editorField.setSelection(s.text.length)
+        strip.suggestions = emptyList()
+        editorPanel.isVisible = true
+        editorMode = true
     }
+
+    /** While the editor is open, route the keyboard into the editor field. */
+    private fun handleEditorKey(key: Key) {
+        when (key.action) {
+            KeyAction.CHAR -> {
+                val c = if (shiftState == ShiftState.SHIFTED && key.label.length == 1 && key.label[0].isLetter()) {
+                    shiftState = ShiftState.LOWERCASE
+                    refreshLayout()
+                    key.label.uppercase()
+                } else {
+                    key.label
+                }
+                if (c.isNotEmpty()) insertIntoEditor(c)
+            }
+            KeyAction.SPACE -> insertIntoEditor(" ")
+            KeyAction.BACKSPACE -> {
+                val pos = editorField.selectionStart.coerceAtLeast(0)
+                if (pos > 0) editorField.text.delete(pos - 1, pos)
+            }
+            KeyAction.SHIFT -> toggleShift()
+            KeyAction.ENTER -> saveEdit()
+            else -> {}
+        }
+    }
+
+    private fun insertIntoEditor(text: String) {
+        val pos = editorField.selectionStart.coerceAtLeast(0)
+        editorField.text.insert(pos, text)
+    }
+
+    private fun saveEdit() {
+        val pending = pendingEdit ?: return
+        pendingEdit = null
+        val corrected = editorField.text.toString().trim()
+        closeEditor()
+        if (corrected.isEmpty()) return
+        val (source, generated) = pending
+        // The host editor keeps the input connection (the inline field never
+        // steals it), but the connection can briefly be null right after the
+        // panel hides — retry until it returns, then apply the correction.
+        root.postDelayed(
+            object : Runnable {
+                var attempts = 0
+                override fun run() {
+                    attempts++
+                    input.attach(currentInputConnection)
+                    if (input.isActive) {
+                        commitEditedSuggestion(source, generated, corrected)
+                    } else if (attempts < 10) {
+                        root.postDelayed(this, 100)
+                    } else {
+                        runCatching {
+                            clipboardManager.setPrimaryClip(
+                                android.content.ClipData.newPlainText("twinglish", corrected)
+                            )
+                        }
+                        android.widget.Toast.makeText(
+                            this@TwinglishInputMethodService,
+                            "Correction copied — paste it to apply",
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            },
+            150,
+        )
+    }
+
+    private fun cancelEdit() {
+        pendingEdit = null
+        closeEditor()
+    }
+
+    private fun closeEditor() {
+        editorMode = false
+        editorPanel.isVisible = false
+        updateSuggestions(currentSentence)
+    }
+
+    /** Rounded accent button used by the correction editor panel. */
+    private fun editorButton(label: String, onClick: () -> Unit): android.widget.TextView =
+        android.widget.TextView(this).apply {
+            text = label
+            gravity = android.view.Gravity.CENTER
+            textSize = 14f
+            setTextColor(android.graphics.Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(currentColors().enterKey)
+            }
+            setOnClickListener { onClick() }
+        }
+
 
     /**
      * Replace the source English sentence with the corrected Twinglish and
