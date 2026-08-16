@@ -1,0 +1,237 @@
+package com.twinglish.keyboard.engine.translation
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class GoogleTranslationProviderTest {
+
+    /** Controllable offline provider used as the composite's first stage. */
+    private class FakeOffline(
+        var result: TranslationResult?,
+        var calls: Int = 0,
+    ) : TranslationProvider {
+        override val id: String = "fake-offline"
+        override val isOnline: Boolean = false
+        override suspend fun translateEnglishToTelugu(
+            text: String,
+            style: TranslationStyle,
+        ): TranslationResult? {
+            calls++
+            return result
+        }
+        override fun romanizeTelugu(teluguText: String, style: RomanizationStyle): String =
+            teluguText
+    }
+
+    private fun teluguResult(text: String, confidence: Float): TranslationResult =
+        TranslationResult(
+            input = text,
+            telugu = "తెలుగు",
+            twinglish = "telugu",
+            confidence = confidence,
+            style = TranslationStyle.CASUAL,
+        )
+
+    // ------------------------------------------------------------------
+    // gtx payload parsing
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `parses a single segment gtx payload`() {
+        val body = """[[["మీరు ఎలా ఉన్నారు?","how are you?",null,null,10]],null,"en",null,null,[["en"],["te"]]]"""
+        assertEquals("మీరు ఎలా ఉన్నారు?", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
+    fun `concatenates multi segment payloads in order`() {
+        val body = """[[["ఎలా","how",null,null,10],[" ఉన్నావు"," are you",null,null,10]],null,"en"]"""
+        assertEquals("ఎలా ఉన్నావు", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
+    fun `unescapes quoted text inside segments`() {
+        val body = """[[["అతను \"అందంగా\" ఉన్నాడు","he is handsome",null,null,10]],null,"en"]"""
+        assertEquals("అతను \"అందంగా\" ఉన్నాడు", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
+    fun `returns null for garbage payloads`() {
+        assertNull(GoogleTranslationProvider.parseGtxResponse("not json at all"))
+        assertNull(GoogleTranslationProvider.parseGtxResponse("""{"error":"nope"}"""))
+        assertNull(GoogleTranslationProvider.parseGtxResponse(""))
+    }
+
+    // ------------------------------------------------------------------
+    // offline-first behavior
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `high confidence offline result wins and the network is never called`() = runBlocking {
+        var fetches = 0
+        val offline = FakeOffline(teluguResult("how are you", 0.92f))
+        val provider = GoogleTranslationProvider(
+            offline = offline,
+            onlineEnabled = { true },
+            fetcher = {
+                fetches++
+                "మీరు ఎలా ఉన్నారు?"
+            },
+        )
+
+        val result = provider.translateEnglishToTelugu("How are you?", TranslationStyle.CASUAL)
+        assertEquals("తెలుగు", result!!.telugu)
+        assertEquals(1, offline.calls)
+        assertEquals(0, fetches)
+    }
+
+    @Test
+    fun `low confidence offline result defers to google`() = runBlocking {
+        val offline = FakeOffline(teluguResult("i am going to market", 0.7f))
+        val provider = GoogleTranslationProvider(
+            offline = offline,
+            onlineEnabled = { true },
+            fetcher = { "నేను మార్కెట్ కి వెళ్తున్నాను" },
+        )
+
+        val result = provider.translateEnglishToTelugu("i am going to market", TranslationStyle.CASUAL)
+        assertEquals("నేను మార్కెట్ కి వెళ్తున్నాను", result!!.telugu)
+        assertEquals(1, offline.calls)
+    }
+
+    @Test
+    fun `offline miss falls back to google and romanizes to twinglish`() = runBlocking {
+        val offline = FakeOffline(null)
+        val provider = GoogleTranslationProvider(
+            offline = offline,
+            onlineEnabled = { true },
+            fetcher = { "మీరు ఎలా ఉన్నారు?" },
+        )
+
+        val result = provider.translateEnglishToTelugu("how are you today my friend", TranslationStyle.CASUAL)
+        // Google's neutral Telugu is nudged to casual chat register…
+        assertEquals("నువ్వు ఎలా ఉన్నావు?", result!!.telugu)
+        // …and romanized to conversational Twinglish.
+        assertEquals("nuvvu ela unnav?", result.twinglish)
+        assertEquals(0.95f, result.confidence)
+    }
+
+    @Test
+    fun `offline miss with online disabled keeps the offline result`() = runBlocking {
+        var fetches = 0
+        val offline = FakeOffline(null)
+        val provider = GoogleTranslationProvider(
+            offline = offline,
+            onlineEnabled = { false },
+            fetcher = {
+                fetches++
+                "మీరు ఎలా ఉన్నారు?"
+            },
+        )
+
+        assertNull(provider.translateEnglishToTelugu("some sentence the bank misses", TranslationStyle.CASUAL))
+        assertEquals(0, fetches)
+    }
+
+    @Test
+    fun `google failure falls back to the offline result`() = runBlocking {
+        val offline = FakeOffline(teluguResult("whatever", 0.7f))
+        val provider = GoogleTranslationProvider(
+            offline = offline,
+            onlineEnabled = { true },
+            fetcher = { null }, // network failure
+        )
+
+        val result = provider.translateEnglishToTelugu("i am going to market", TranslationStyle.CASUAL)
+        assertEquals("తెలుగు", result!!.telugu)
+    }
+
+    // ------------------------------------------------------------------
+    // fetch cache: the IME asks for several styles in quick succession
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `normalized duplicates share a single google fetch`() = runBlocking {
+        var fetches = 0
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = {
+                fetches++
+                "నేను మార్కెట్ కి వెళ్తున్నాను"
+            },
+        )
+
+        provider.translateEnglishToTelugu("I am going to the market", TranslationStyle.CASUAL)
+        provider.translateEnglishToTelugu("i am going to the market", TranslationStyle.POLITE)
+        assertEquals(1, fetches)
+    }
+
+    @Test
+    fun `polite and formal styles keep the google telugu untouched`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "మీరు ఎలా ఉన్నారు?" },
+        )
+
+        val polite = provider.translateEnglishToTelugu("how are you", TranslationStyle.POLITE)
+        assertEquals("మీరు ఎలా ఉన్నారు?", polite!!.telugu)
+        assertEquals("meeru ela unnaru?", polite.twinglish)
+
+        val formal = provider.translateEnglishToTelugu("how are you", TranslationStyle.FORMAL)
+        assertEquals("మీరు ఎలా ఉన్నారు?", formal!!.telugu)
+    }
+
+    @Test
+    fun `already casual telugu is unchanged by the casualizer`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "నువ్వు ఏం చేస్తున్నావు?" },
+        )
+
+        val result = provider.translateEnglishToTelugu("what are you doing", TranslationStyle.CASUAL)
+        assertEquals("నువ్వు ఏం చేస్తున్నావు?", result!!.telugu)
+        assertEquals("nuvvu em chestunnav?", result.twinglish)
+    }
+
+    @Test
+    fun `blank input never reaches the network`() = runBlocking {
+        var fetches = 0
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = {
+                fetches++
+                "x"
+            },
+        )
+        assertNull(provider.translateEnglishToTelugu("   ", TranslationStyle.CASUAL))
+        assertEquals(0, fetches)
+    }
+
+    // ------------------------------------------------------------------
+    // the real provider still answers the phrase bank offline
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `real phrase bank sentences translate without touching the network`() = runBlocking {
+        var fetches = 0
+        val provider = GoogleTranslationProvider(
+            offline = OfflineTranslationProvider(),
+            onlineEnabled = { true },
+            fetcher = {
+                fetches++
+                "మీరు ఎలా ఉన్నారు?"
+            },
+        )
+
+        val result = provider.translateEnglishToTelugu("how are you", TranslationStyle.CASUAL)
+        assertEquals("ఎలా ఉన్నావు?", result!!.telugu)
+        assertEquals("ela unnav?", result.twinglish)
+        assertEquals(0, fetches)
+    }
+}

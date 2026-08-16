@@ -5,6 +5,8 @@ import android.util.Log
 import com.twinglish.keyboard.data.SettingsRepository
 import com.twinglish.keyboard.engine.TwinglishEngine
 import com.twinglish.keyboard.engine.personalization.LearningEngine
+import com.twinglish.keyboard.engine.translation.GoogleTranslationProvider
+import com.twinglish.keyboard.engine.translation.OfflineTranslationProvider
 import com.twinglish.keyboard.engine.personalization.LearningFlags
 import com.twinglish.keyboard.engine.personalization.LocalKnowledgeStore
 import com.twinglish.keyboard.engine.personalization.PersonalizationEngine
@@ -41,7 +43,21 @@ class TwinglishApplication : Application() {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
-    val twinglishEngine: TwinglishEngine by lazy { TwinglishEngine() }
+    /**
+     * The translation engine. Offline-first: the curated phrase bank answers
+     * instantly, and Google Translate (keyless endpoint) handles sentences
+     * the bank can't translate — but only when the user enables "Online
+     * translation" in Settings. Secure fields never reach it (the IME only
+     * translates plain-text fields).
+     */
+    val twinglishEngine: TwinglishEngine by lazy {
+        TwinglishEngine(
+            provider = GoogleTranslationProvider(
+                offline = OfflineTranslationProvider(),
+                onlineEnabled = { settingsRepository.settings.value.onlineTranslationEnabled },
+            )
+        )
+    }
 
     /**
      * Local, privacy-first knowledge store: the bounded translation cache
