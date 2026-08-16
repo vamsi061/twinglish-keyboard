@@ -234,6 +234,29 @@ class GoogleTranslationProvider(
         return telugu
     }
 
+    /**
+     * English code-switch substitutions for words Google renders in formal
+     * literary Telugu. Those romanize terribly (స్వయంచాలకంగా →
+     * "svayamchaalakanga"), so casual style keeps the natural Twinglish forms
+     * instead ("automatic ga"). Longer keys MUST come before shorter ones
+     * because some contain others ("ఇంగ్లీషును" contains "ఇంగ్లీషు").
+     */
+    private val casualVocabulary = listOf(
+        // The app's own brand name — never transliterated (ట్విగ్లిష్ → tviglish).
+        "ట్వింగ్లీష్" to "Twinglish",
+        "ట్విగ్లీష్" to "Twinglish",
+        "ట్విగ్లిష్" to "Twinglish",
+        // సృష్టించాను → తయారు చేశాను (created → made)
+        "సృష్టించాను" to "తయారు చేశాను",
+        // స్వయంచాలకంగా → automatic గా (automatically)
+        "స్వయంచాలకంగా" to "automatic గా",
+        "ఇంగ్లీషును" to "English ని",
+        "ఆంగ్లాన్ని" to "English ని",
+        "ఇంగ్లీషు" to "English",
+        "యాప్ని" to "app ని",
+        "యాప్" to "app",
+    )
+
     /** Formal → casual chat substitutions (reverse of the offline polite set). */
     private val casualTransforms = listOf(
         "ఉన్నారా" to "ఉన్నావా",
@@ -264,10 +287,17 @@ class GoogleTranslationProvider(
      * Google's output untouched.
      */
     private fun casualize(telugu: String): String {
-        var out = telugu
+        // Google inserts zero-width non-joiners (ట్విగ్లిష్\u200cగా) to stop
+        // conjunct formation. They mark a syllable boundary, so they become a
+        // space (Twinglish ga, app ni) rather than vanishing. The joiner is
+        // simply dropped.
+        var out = telugu.replace("\u200C", " ").replace("\u200D", "")
         for ((formal, casual) in casualTransforms) {
             out = out.replace(formal, casual)
         }
-        return out.trim()
+        for ((formal, casual) in casualVocabulary) {
+            out = out.replace(formal, casual)
+        }
+        return out.trim().replace(Regex("\\s{2,}"), " ")
     }
 }

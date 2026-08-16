@@ -240,6 +240,53 @@ class GoogleTranslationProviderTest {
     }
 
     @Test
+    fun `literary google telugu is casualized into conversational twinglish`() = runBlocking {
+        // Real gtx payload for "i created a new app that auto converts english
+        // to twiglish": Google returns formal literary Telugu that romanizes
+        // badly, transliterates the brand name, and inserts zero-width joiners.
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "నేను ఇంగ్లీషును స్వయంచాలకంగా ట్విగ్లిష్\u200cగా మార్చే కొత్త యాప్\u200cని సృష్టించాను" },
+        )
+
+        val result = provider.translateEnglishToTelugu(
+            "i created a new app that auto converts english to twiglish",
+            TranslationStyle.CASUAL,
+        )
+        // Literary words become chat forms / code-switched English, the brand
+        // name is preserved, and the joiners are gone.
+        assertEquals(
+            "నేను English ని automatic గా Twinglish గా మార్చే కొత్త app ని తయారు చేశాను",
+            result!!.telugu,
+        )
+        // …and it romanizes to something a Telugu speaker would actually type.
+        assertEquals(
+            "nenu English ni automatic ga Twinglish ga marche kotta app ni tayaaru chesanu",
+            result.twinglish,
+        )
+    }
+
+    @Test
+    fun `brand name variants always stay twinglish`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "నేను ట్వింగ్లీష్ వాడతాను" },
+        )
+
+        val result = provider.translateEnglishToTelugu("i use twinglish", TranslationStyle.CASUAL)
+        assertEquals("నేను Twinglish వాడతాను", result!!.telugu)
+    }
+
+    @Test
+    fun `cheshanu romanizes to casual chat form`() {
+        assertEquals("nenu chesanu", Romanizer.romanize("నేను చేశాను"))
+        assertEquals("nuvvu chesav", Romanizer.romanize("నువ్వు చేశావు"))
+        assertEquals("vaaru chesaru", Romanizer.romanize("వారు చేశారు"))
+    }
+
+    @Test
     fun `already punctuated google output is not doubled`() = runBlocking {
         val provider = GoogleTranslationProvider(
             offline = FakeOffline(null),

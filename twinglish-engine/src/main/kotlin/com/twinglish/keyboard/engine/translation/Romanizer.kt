@@ -111,6 +111,11 @@ object Romanizer {
     private val casualOverrides = mapOf(
         "kaavaali" to "kavali",
         "kaavaala" to "kavala",
+        // చేశాను → chesanu (not cheshaanu), చేశావు → chesav, చేశారు → chesaru.
+        "cheshaanu" to "chesanu",
+        "cheshaav" to "chesav",
+        "cheshaaru" to "chesaru",
+        "cheshaam" to "chesam",
     )
 
     // Anusvara assimilates to the following consonant's place of articulation.
