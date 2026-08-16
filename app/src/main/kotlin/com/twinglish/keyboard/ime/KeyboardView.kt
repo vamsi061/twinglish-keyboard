@@ -121,6 +121,13 @@ class KeyboardView(context: Context) : View(context) {
 
     fun setLayout(newRows: List<List<Key>>) {
         rows = newRows
+        // Rebuild the geometry right away: the view size does not change
+        // when the layout swaps (shift on/off, symbols, emoji…), so
+        // onSizeChanged never fires again and the old key rects would
+        // otherwise keep drawing the stale first layout forever.
+        if (width > 0 && height > 0) {
+            computeGeometry(width.toFloat(), height.toFloat())
+        }
         requestLayout()
         invalidate()
     }
