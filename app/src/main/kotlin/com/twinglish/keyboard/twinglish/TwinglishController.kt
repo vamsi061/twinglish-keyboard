@@ -108,6 +108,20 @@ class TwinglishController(
     }
 
     /**
+     * The user accepted a suggestion whose source sentence is known (e.g. a
+     * long-press correction dialog that kept the text unchanged). Uses the
+     * explicit source because the controller state may have been reset by
+     * the dialog stealing focus.
+     */
+    fun onSuggestionAccepted(source: String, text: String) {
+        lastAccepted = text
+        if (source.isNotBlank()) {
+            personalization.recordAccepted(source, text, styleOf(text))
+        }
+        shownSuggestion = null
+    }
+
+    /**
      * The user edited an accepted suggestion. Called with the sentence that
      * was translated, the generated text and the text as the user left it.
      */

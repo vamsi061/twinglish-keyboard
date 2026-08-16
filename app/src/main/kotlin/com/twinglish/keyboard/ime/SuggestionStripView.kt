@@ -24,6 +24,9 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
 
     var onSuggestionClicked: ((Suggestion) -> Unit)? = null
 
+    /** Long-press on a suggestion — used to open the correction editor. */
+    var onSuggestionLongClicked: ((Suggestion) -> Unit)? = null
+
     var colors: KeyboardColors = KeyboardColors.Blue
         set(value) {
             field = value
@@ -43,6 +46,7 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
         ChipAdapter().also {
             it.colors = colors
             it.onClick = { s -> onSuggestionClicked?.invoke(s) }
+            it.onLongClick = { s -> onSuggestionLongClicked?.invoke(s) }
             recycler.adapter = it
         }
     }
@@ -83,6 +87,7 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
     private class ChipAdapter : RecyclerView.Adapter<ChipAdapter.VH>() {
         var colors: KeyboardColors = KeyboardColors.Blue
         var onClick: ((Suggestion) -> Unit)? = null
+        var onLongClick: ((Suggestion) -> Unit)? = null
         private var items: List<Suggestion> = emptyList()
 
         fun submitList(list: List<Suggestion>) {
@@ -134,6 +139,13 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
                 tv.setPadding(dp(tv, 9), dp(tv, 5), dp(tv, 9), dp(tv, 5))
             }
             tv.setOnClickListener { onClick?.invoke(s) }
+            tv.setOnLongClickListener {
+                // Consume the long-press so the tap is NOT also fired, and
+                // give haptic feedback so the edit affordance is discoverable.
+                it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                onLongClick?.invoke(s)
+                true
+            }
         }
 
         private fun dp(tv: TextView, value: Int): Int =

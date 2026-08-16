@@ -27,19 +27,33 @@ working fully offline.
   alternatives, haptics, light/dark/system themes, landscape + tablet
   layouts, adaptive key height, and spacebar cursor drag.
 - **Suggestion strip** — English word suggestions, or Twinglish sentence
-  translation while you type. Tap to apply; your text is never replaced
-  without you asking.
-- **Twinglish engine** — offline rule-based English → Telugu → romanized
-  Twinglish translation behind a clean `TranslationProvider` interface.
-  Casual / Polite / Formal styles, Casual / Strict romanization,
-  punctuation & emoji preserved, proper nouns kept (`Hyderabad`), and
-  code-switching respected (`Nenu office ki velthunna`).
+  translation while you type. Tap to apply; **long-press** any Twinglish
+  suggestion to correct it. Your text is never replaced without you asking.
+- **Twinglish engine** — two-stage English → Telugu → romanized Twinglish
+  translation behind a clean `TranslationProvider` interface. A curated
+  offline phrase grammar answers instantly and works without a network; an
+  optional **Google Translate** stage (Settings → Online translation, off
+  by default) handles sentences the phrase bank can't. Casual / Polite /
+  Formal styles, Casual / Strict romanization, punctuation & emoji
+  preserved, proper nouns kept (`Hyderabad`), and code-switching respected
+  (`Nenu office ki velthunna`).
+- **Self-learning (on-device)** — accepted suggestions, long-press
+  corrections and passed-over suggestions teach the engine the user's
+  preferred wording (`sinima` over `movie`, `chestunnav` over
+  `chestunnavu`). Corrections are remembered with a confidence score that
+  re-ranks future candidates, translations are cached for instant repeat
+  lookups, and frequently used phrases autocomplete. Everything is stored
+  locally and can be cleared from Settings.
 - **Numbers & symbols** pages, **emoji picker**, **clipboard panel**
   (paste / pin / delete).
 - **Settings app** — theme, height, haptics, sounds, popups,
-  auto-capitalization, Twinglish style, romanization, privacy notes.
-- **Privacy first** — no network calls, no analytics, no telemetry, no
-  unnecessary permissions, passwords never processed.
+  auto-capitalization, Twinglish style, romanization, online translation,
+  personalization toggles + a "What Twinglish learned" view, privacy
+  notes.
+- **Privacy first** — no analytics, no telemetry, no unnecessary
+  permissions; translation and learning run on-device. Online translation
+  is opt-in and sends only the current sentence; passwords are never
+  processed.
 
 ---
 
@@ -91,31 +105,60 @@ Run the tests (Twinglish engine + translation test cases):
 3. The suggestion strip shows `Ela unnav?` (debounced as you type).
 4. Tap the suggestion — the English phrase is replaced by the Twinglish
    result.
-5. Nothing is ever replaced automatically; tapping the suggestion is always
-   your explicit choice.
+5. **Correct a translation:** long-press the suggestion, edit the
+   Twinglish in the dialog that opens, and tap **Save**. The field is
+   updated with your version, and the engine learns it — the next time
+   the same (or a similar) sentence is typed, your corrected wording is
+   shown first.
+6. Nothing is ever replaced automatically; tapping the suggestion is
+   always your explicit choice.
 
 Style and romanization can be changed in Settings → Twinglish (Casual /
-Polite / Formal; Casual / Strict romanization).
+Polite / Formal; Casual / Strict romanization). Personalization can be
+tuned in Settings → Personalization (learn preferences / corrections /
+vocabulary, personalized suggestions, Clear Learned Data).
 
 ## How the Twinglish engine works
 
 ```
 English input
-   ↓  (ContextualTranslator: strips fillers/punctuation/emoji, protects
-   ↓   proper nouns and code-switched words)
-sentence
-   ↓  (OfflineTranslationProvider: phrase-rule grammar → natural Telugu)
+   ↓  Input Normalizer (case / repeated-whitespace folded)
+normalized sentence
+   ↓  Personalization lookup
+   │   1. exact user-approved translation
+   │   2. exact translation cache        ← cache hit returns instantly
+   │   3. strong learned phrase
+   ↓  cache miss
+   ↓  OfflineTranslationProvider (phrase-rule grammar → natural Telugu)
+   ↓  + optional Google Translate stage for unseen sentences (opt-in)
 Telugu script (e.g. ఏం చేస్తున్నావు)
-   ↓  (Romanizer: Telugu script → casual Twinglish)
+   ↓  Romanizer (Telugu script → casual Twinglish)
 Twinglish  (e.g. em chestunnav)
+   ↓  Personalization (learned word preferences + candidate re-ranking)
+final suggestion
 ```
 
 The keyboard talks to the translation layer **only through**
 `TranslationProvider` (in `twinglish-engine`). The built-in
 `OfflineTranslationProvider` is a pattern-based grammar with a word
-dictionary fallback — not a hard-coded sentence table. A remote provider
-(e.g. a machine-translation API) can be plugged in later by implementing
-the same interface; no keyboard code changes.
+dictionary fallback — not a hard-coded sentence table. It always answers
+first (exact, instant, offline); the optional `GoogleTranslationProvider`
+handles only the sentences the phrase bank can't translate.
+
+### Caching & self-learning
+
+Every result is cached locally (bounded, ~5,000 entries, LRU eviction)
+with normalized keys — `How are you?`, `how are you?` and `how  are you?`
+all resolve to the same entry, so repeated sentences return in a few
+milliseconds without re-translating. The learning engine records **only
+meaningful events** — tapping a suggestion, long-pressing to correct it,
+or typing over a shown suggestion — never raw keystrokes. Corrections
+learn word preferences with a confidence score that grows on every repeat
+(`movie → sinima` becomes strong after a couple of confirmations), and
+re-ranking is additive: weak or out-of-context preferences are ignored, so
+personalization can never make translation worse. All of it lives in local
+app storage and can be wiped from Settings (Clear Learned Data / Reset
+Twinglish Preferences).
 
 ## Adding another language later
 
@@ -126,11 +169,19 @@ the same interface; no keyboard code changes.
 
 ## Privacy behavior
 
-- All translation runs **offline** on the device. Nothing you type is sent
-  anywhere.
-- No permissions are requested beyond what an IME requires; no network
-  permission, no storage, no location.
-- Password, email, URL and number fields never trigger translation.
+- Default translation is fully **offline** on the device — nothing you
+  type is sent anywhere.
+- Optional **online translation** (Settings → Online translation, off by
+  default) sends only the *current sentence* to Google Translate when the
+  offline phrase bank can't translate it. It can be disabled at any time.
+- Personalization data (cached translations, learned preferences, learned
+  phrases, corrections) is stored **locally** on the device. It is never
+  uploaded, never used for analytics, and can be cleared from Settings
+  (Clear Learned Data / Reset Twinglish Preferences).
+- Password, PIN and other secure fields never trigger translation — and
+  never trigger caching or learning either.
+- No permissions are requested beyond what an IME requires; no storage,
+  no location.
 - Clipboard is only read when you open the clipboard panel; pinned clips
   are stored locally in app preferences.
 

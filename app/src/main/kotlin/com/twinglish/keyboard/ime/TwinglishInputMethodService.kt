@@ -161,6 +161,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         }
         strip = SuggestionStripView(this).apply {
             onSuggestionClicked = { s -> commitSuggestion(s.text, s.source) }
+            onSuggestionLongClicked = { s -> editSuggestion(s) }
         }
         keyboardView = KeyboardView(this).apply {
             listener = keyboardListener
@@ -717,17 +718,122 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
                 // Twinglish: replace the sentence fragment.
                 val source = currentSentence
                 if (input.replaceComposingOrLastWord(text, currentSentence)) {
+                    // Learn from the acceptance BEFORE clearing — the
+                    // controller needs the last sentence + candidates to
+                    // record the event.
+                    if (translationAllowed && source.isNotBlank()) {
+                        controller.onSuggestionAccepted(text)
+                    }
                     currentSentence = ""
                     controller.clear()
                     strip.suggestions = emptyList()
-                    // Learn from the acceptance and watch for a follow-up edit.
-                    if (translationAllowed && source.isNotBlank()) {
-                        controller.onSuggestionAccepted(text)
-                        pendingCorrection = source to text
-                    }
+                    // Watch for a follow-up in-place edit ("E movie kavali?"
+                    // → "E sinima kavali?" typed over it).
+                    pendingCorrection = source to text
                 }
             }
         }
+    }
+
+    /**
+     * Long-press on a Twinglish suggestion opens the correction editor. The
+     * corrected text replaces the source English sentence in the field AND
+     * is recorded as a correction, so the engine learns the user's preferred
+     * wording and shows it first the next time the same (or a similar)
+     * sentence is typed.
+     */
+    private fun editSuggestion(s: SuggestionStripView.Suggestion) {
+        if (s.source != "twinglish" || !translationAllowed || !input.isActive) return
+        val source = currentSentence
+        if (source.isBlank()) return
+
+        val density = resources.displayMetrics.density
+        val pad = (16 * density).toInt()
+
+        val caption = android.widget.TextView(this).apply {
+            text = "Original: $source"
+            setTextColor(android.graphics.Color.parseColor("#607D8B"))
+            textSize = 13f
+            setPadding(pad, dp(6), pad, 0)
+        }
+        val editor = android.widget.EditText(this).apply {
+            setText(s.text)
+            setSelection(s.text.length)
+            setSingleLine(true)
+            textSize = 17f
+            setPadding(pad, dp(8), pad, dp(6))
+        }
+        val body = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(caption)
+            addView(editor)
+        }
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Correct translation")
+            .setView(body)
+            .create()
+        dialog.setButton(android.app.AlertDialog.BUTTON_POSITIVE, "Save") { _, _ ->
+            val corrected = editor.text.toString().trim()
+            if (corrected.isEmpty()) return@setButton
+            dialog.dismiss()
+            // While the dialog was up, the input connection was attached to
+            // the dialog's own EditText. After it closes, the host editor
+            // regains focus and the connection returns — wait for that,
+            // re-attach, then apply the correction. Retries cover slow
+            // focus hand-offs; if it never returns, fall back to clipboard.
+            root.postDelayed(
+                object : Runnable {
+                    var attempts = 0
+                    override fun run() {
+                        attempts++
+                        input.attach(currentInputConnection)
+                        if (input.isActive) {
+                            commitEditedSuggestion(source, s.text, corrected)
+                        } else if (attempts < 5) {
+                            root.postDelayed(this, 100)
+                        } else {
+                            runCatching {
+                                clipboardManager.setPrimaryClip(
+                                    android.content.ClipData.newPlainText("twinglish", corrected)
+                                )
+                            }
+                            android.widget.Toast.makeText(
+                                this@TwinglishInputMethodService,
+                                "Correction copied — paste it to apply",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                },
+                150,
+            )
+        }
+        dialog.setButton(android.app.AlertDialog.BUTTON_NEGATIVE, "Cancel") { _, _ ->
+            dialog.dismiss()
+        }
+        runCatching { dialog.show() }
+    }
+
+    /**
+     * Replace the source English sentence with the corrected Twinglish and
+     * feed the correction to the learning engine (caches the user's version
+     * and boosts the word preferences it implies).
+     */
+    private fun commitEditedSuggestion(source: String, generated: String, corrected: String) {
+        if (!input.replaceComposingOrLastWord(corrected, source)) return
+        if (translationAllowed && source.isNotBlank()) {
+            if (corrected == generated) {
+                // Kept as-is → plain acceptance (explicit source: the
+                // dialog stole focus and reset the controller state).
+                controller.onSuggestionAccepted(source, corrected)
+            } else {
+                controller.onSuggestionCorrected(source, generated, corrected)
+            }
+        }
+        currentSentence = ""
+        controller.clear()
+        strip.suggestions = emptyList()
     }
 
     /**
