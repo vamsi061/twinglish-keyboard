@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -26,8 +28,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -68,6 +74,7 @@ class SettingsActivity : ComponentActivity() {
     private fun SettingsScreen(modifier: Modifier = Modifier) {
         val settings by repository.settings.collectAsState(initial = Settings())
         val update = repository::updateAsync
+        var learnedRefresh by remember { mutableStateOf(0) }
 
         Column(
             modifier = modifier
@@ -187,6 +194,70 @@ class SettingsActivity : ComponentActivity() {
             }
 
             Spacer(Modifier.height(16.dp))
+            SectionTitle("Personalization")
+            Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(1.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text(
+                        "Everything below is learned and stored only on this device. " +
+                            "Nothing is uploaded, and nothing is ever learned from passwords or " +
+                            "other secure fields.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    LabeledSwitch(
+                        title = "Learn my Twinglish preferences",
+                        subtitle = "Remember accepted translations, corrections and style over time",
+                        checked = settings.personalizationEnabled,
+                        onCheckedChange = { value -> update { it.copy(personalizationEnabled = value) } },
+                    )
+                    HorizontalDivider()
+                    LabeledSwitch(
+                        title = "Learn corrections",
+                        subtitle = "\"movie\" → \"sinima\" style edits, after you make them repeatedly",
+                        checked = settings.learnCorrections,
+                        onCheckedChange = { value -> update { it.copy(learnCorrections = value) } },
+                    )
+                    HorizontalDivider()
+                    LabeledSwitch(
+                        title = "Personalized suggestions",
+                        subtitle = "Re-rank suggestions using what was learned",
+                        checked = settings.personalizedSuggestions,
+                        onCheckedChange = { value -> update { it.copy(personalizedSuggestions = value) } },
+                    )
+                    HorizontalDivider()
+                    LabeledSwitch(
+                        title = "Learn vocabulary",
+                        subtitle = "Remember English words you keep (office, call, bro …)",
+                        checked = settings.learnVocabulary,
+                        onCheckedChange = { value -> update { it.copy(learnVocabulary = value) } },
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                    WhatTwinglishLearned(refreshKey = learnedRefresh)
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            TwinglishApplication.from(this@SettingsActivity).personalizationEngine.clearAllData()
+                            learnedRefresh++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Clear Learned Data")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            TwinglishApplication.from(this@SettingsActivity).personalizationEngine.resetPreferences()
+                            learnedRefresh++
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Reset Twinglish Preferences")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
             SectionTitle("Privacy")
             Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(12.dp)) {
@@ -220,6 +291,36 @@ class SettingsActivity : ComponentActivity() {
                 }
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    /** Explainable learning: what the keyboard has learned about this user. */
+    @Composable
+    private fun WhatTwinglishLearned(refreshKey: Int) {
+        var lines by remember { mutableStateOf<List<String>>(emptyList()) }
+        LaunchedEffect(refreshKey) {
+            lines = runCatching {
+                TwinglishApplication.from(this@SettingsActivity).personalizationEngine.learnedInfo()
+            }.getOrDefault(emptyList())
+        }
+        Text(
+            text = "What Twinglish learned",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        if (lines.isEmpty()) {
+            Text(
+                "Nothing learned yet — the more you use Twinglish, the more it " +
+                    "adapts to your wording.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            lines.forEach { line ->
+                Text(
+                    "• $line",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = 1.dp),
+                )
+            }
         }
     }
 

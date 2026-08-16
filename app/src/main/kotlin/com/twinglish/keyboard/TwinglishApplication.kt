@@ -4,6 +4,11 @@ import android.app.Application
 import android.util.Log
 import com.twinglish.keyboard.data.SettingsRepository
 import com.twinglish.keyboard.engine.TwinglishEngine
+import com.twinglish.keyboard.engine.personalization.LearningEngine
+import com.twinglish.keyboard.engine.personalization.LearningFlags
+import com.twinglish.keyboard.engine.personalization.LocalKnowledgeStore
+import com.twinglish.keyboard.engine.personalization.PersonalizationEngine
+import com.twinglish.keyboard.engine.personalization.PersonalizedRanker
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +42,37 @@ class TwinglishApplication : Application() {
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(this) }
 
     val twinglishEngine: TwinglishEngine by lazy { TwinglishEngine() }
+
+    /**
+     * Local, privacy-first knowledge store: the bounded translation cache
+     * plus everything the keyboard has learned. Persisted as a file in the
+     * app's private files dir — nothing ever leaves the device.
+     */
+    val knowledgeStore: LocalKnowledgeStore by lazy {
+        LocalKnowledgeStore(path = File(filesDir, "twinglish_knowledge.data").absolutePath)
+    }
+
+    val personalizationEngine: PersonalizationEngine by lazy {
+        PersonalizationEngine(
+            engine = twinglishEngine,
+            store = knowledgeStore,
+            learning = LearningEngine(knowledgeStore, flagsProvider = { learningFlags }),
+            ranker = PersonalizedRanker(),
+            flagsProvider = { learningFlags },
+        )
+    }
+
+    /** Live learning switches read from Settings. */
+    private val learningFlags: LearningFlags
+        get() {
+            val s = settingsRepository.settings.value
+            return LearningFlags(
+                enabled = s.personalizationEnabled,
+                corrections = s.learnCorrections,
+                vocabulary = s.learnVocabulary,
+                personalizedSuggestions = s.personalizedSuggestions,
+            )
+        }
 
     override fun onCreate() {
         super.onCreate()

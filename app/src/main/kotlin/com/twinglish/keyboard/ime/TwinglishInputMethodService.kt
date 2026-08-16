@@ -74,6 +74,9 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private var repeatActive = false
     private var currentSentence = ""
 
+    /** (sourceSentence, committedSuggestion) awaiting possible user edit. */
+    private var pendingCorrection: Pair<String, String>? = null
+
     /** Explicit keyboard shift state machine. */
     private enum class ShiftState { LOWERCASE, SHIFTED, CAPS_LOCK }
     private enum class Mode { LETTERS, SYMBOLS, EMOJI, CLIPBOARD }
@@ -93,7 +96,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         app = TwinglishApplication.from(this)
         settingsRepo = app.settingsRepository
         controller = TwinglishController(
-            engine = app.twinglishEngine,
+            personalization = app.personalizationEngine,
             scope = app.applicationScope,
             styleProvider = { settings.translationStyle },
             romanStyleProvider = { settings.romanizationStyle },
@@ -240,6 +243,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         mode = Mode.LETTERS
         symbolPage = 0
         currentSentence = ""
+        pendingCorrection = null
 
         // The keyboard ALWAYS opens in lowercase. Sentence-start
         // capitalization is re-armed while typing (after ".!?" + space and
@@ -265,6 +269,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     override fun onFinishInput() {
         super.onFinishInput()
         input.detach()
+        pendingCorrection = null
         controller.clear()
         // The system can start/finish input BEFORE onCreateInputView has ever
         // run (e.g. right after the IME is enabled), so the input view may
@@ -475,10 +480,22 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun handleKey(key: Key) {
         when (key.action) {
-            KeyAction.CHAR -> commitChar(key.label)
-            KeyAction.SPACE -> commitSpace()
+            KeyAction.CHAR -> {
+                // A suggestion may have just been accepted and edited, or a
+                // shown suggestion passed over — feed both to the learner.
+                detectCorrection()
+                if (translationAllowed) controller.onKeyTyped()
+                commitChar(key.label)
+            }
+            KeyAction.SPACE -> {
+                detectCorrection()
+                if (translationAllowed) controller.onKeyTyped()
+                commitSpace()
+            }
             KeyAction.ENTER -> performEnter()
             KeyAction.BACKSPACE -> {
+                detectCorrection()
+                if (translationAllowed) controller.onKeyTyped()
                 input.deleteBackward()
                 refreshSentenceFromCursor()
                 updateSuggestions(currentSentence)
@@ -698,13 +715,50 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             }
             else -> {
                 // Twinglish: replace the sentence fragment.
+                val source = currentSentence
                 if (input.replaceComposingOrLastWord(text, currentSentence)) {
                     currentSentence = ""
                     controller.clear()
                     strip.suggestions = emptyList()
+                    // Learn from the acceptance and watch for a follow-up edit.
+                    if (translationAllowed && source.isNotBlank()) {
+                        controller.onSuggestionAccepted(text)
+                        pendingCorrection = source to text
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * Self-learning: when the user edits an accepted suggestion ("E movie
+     * kavali?" → "E sinima kavali?"), record the correction so the engine
+     * learns the user's preferred wording. Runs on the next keystroke after
+     * an acceptance, then arms nothing until the next acceptance.
+     */
+    private fun detectCorrection() {
+        val pending = pendingCorrection ?: return
+        pendingCorrection = null
+        if (!translationAllowed || !input.isActive) return
+        val (source, generated) = pending
+        val before = input.textBeforeCursor(128).toString()
+        // The committed suggestion sits right before the cursor; take a
+        // window around it (it may have been edited in place).
+        val window = before.takeLast(generated.length + 8).trim()
+        val normGen = com.twinglish.keyboard.engine.personalization.InputNormalizer.normalize(generated)
+        val normWin = com.twinglish.keyboard.engine.personalization.InputNormalizer.normalize(window)
+        if (normWin.isEmpty() || normWin == normGen) return
+        val shared = commonPrefixLength(normGen, normWin)
+        val close = kotlin.math.abs(normWin.length - normGen.length) <= 3
+        if (close && (shared >= 4 || normGen.startsWith(normWin) || normWin.startsWith(normGen))) {
+            controller.onSuggestionCorrected(source, generated, window)
+        }
+    }
+
+    private fun commonPrefixLength(a: String, b: String): Int {
+        var i = 0
+        while (i < a.length && i < b.length && a[i] == b[i]) i++
+        return i
     }
 
     // ------------------------------------------------------------------

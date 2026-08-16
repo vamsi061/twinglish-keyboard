@@ -50,6 +50,10 @@ class SettingsRepository(context: Context) {
         val ROMAN_STYLE = stringPreferencesKey("romanization_style")
         val ONLINE = booleanPreferencesKey("online_translation")
         val NETWORK_USAGE = booleanPreferencesKey("network_usage")
+        val PERSONALIZATION = booleanPreferencesKey("personalization_enabled")
+        val LEARN_CORRECTIONS = booleanPreferencesKey("learn_corrections")
+        val PERSONALIZED_SUGGESTIONS = booleanPreferencesKey("personalized_suggestions")
+        val LEARN_VOCABULARY = booleanPreferencesKey("learn_vocabulary")
     }
 
     private val settingsState: kotlinx.coroutines.flow.StateFlow<Settings> = dataStore.data.map { p ->
@@ -68,10 +72,14 @@ class SettingsRepository(context: Context) {
             romanizationStyle = RomanizationStyle.fromId(p[Keys.ROMAN_STYLE]),
             onlineTranslationEnabled = p[Keys.ONLINE] ?: false,
             networkUsage = p[Keys.NETWORK_USAGE] ?: false,
+            personalizationEnabled = p[Keys.PERSONALIZATION] ?: true,
+            learnCorrections = p[Keys.LEARN_CORRECTIONS] ?: true,
+            personalizedSuggestions = p[Keys.PERSONALIZED_SUGGESTIONS] ?: true,
+            learnVocabulary = p[Keys.LEARN_VOCABULARY] ?: true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, Settings())
 
-    val settings: Flow<Settings> get() = settingsState
+    val settings: kotlinx.coroutines.flow.StateFlow<Settings> get() = settingsState
 
     suspend fun update(transform: (Settings) -> Settings) {
         dataStore.edit { p ->
@@ -90,6 +98,10 @@ class SettingsRepository(context: Context) {
             p[Keys.ROMAN_STYLE] = s.romanizationStyle.id
             p[Keys.ONLINE] = s.onlineTranslationEnabled
             p[Keys.NETWORK_USAGE] = s.networkUsage
+            p[Keys.PERSONALIZATION] = s.personalizationEnabled
+            p[Keys.LEARN_CORRECTIONS] = s.learnCorrections
+            p[Keys.PERSONALIZED_SUGGESTIONS] = s.personalizedSuggestions
+            p[Keys.LEARN_VOCABULARY] = s.learnVocabulary
         }
     }
 

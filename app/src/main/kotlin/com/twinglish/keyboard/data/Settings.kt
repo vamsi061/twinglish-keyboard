@@ -52,4 +52,14 @@ data class Settings(
 
     // Privacy
     val networkUsage: Boolean = false,
+
+    // Personalization (privacy-first, local only)
+    /** Master switch: learn the user's Twinglish preferences. */
+    val personalizationEnabled: Boolean = true,
+    /** Learn from edits of accepted suggestions ("movie" → "sinima"). */
+    val learnCorrections: Boolean = true,
+    /** Re-rank suggestions using learned preferences. */
+    val personalizedSuggestions: Boolean = true,
+    /** Learn English words the user keeps (code-switching). */
+    val learnVocabulary: Boolean = true,
 )
