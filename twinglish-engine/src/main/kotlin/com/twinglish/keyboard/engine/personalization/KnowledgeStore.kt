@@ -1,5 +1,6 @@
 package com.twinglish.keyboard.engine.personalization
 
+import com.twinglish.keyboard.engine.translation.TranslationSanitizer
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -97,12 +98,19 @@ class LocalKnowledgeStore(
     }
 
     override fun putCache(entry: TranslationCacheEntry) = synchronized(lock) {
-        val existing = cache[entry.normalizedSource]
-        cache[entry.normalizedSource] = if (existing != null && !entry.userApproved) {
+        // Never persist Google metadata tokens that may have leaked through a
+        // translation (defense in depth — see TranslationSanitizer).
+        val cleaned = entry.copy(
+            teluguText = entry.teluguText?.let { TranslationSanitizer.clean(it) }?.ifBlank { null },
+            twinglishText = TranslationSanitizer.clean(entry.twinglishText),
+        )
+        if (cleaned.twinglishText.isBlank()) return@synchronized
+        val existing = cache[cleaned.normalizedSource]
+        cache[cleaned.normalizedSource] = if (existing != null && !cleaned.userApproved) {
             // A generated entry overwritten by later usage keeps its history.
-            entry.copy(usageCount = existing.usageCount + 1, lastUsedAt = entry.lastUsedAt)
+            cleaned.copy(usageCount = existing.usageCount + 1, lastUsedAt = cleaned.lastUsedAt)
         } else {
-            entry
+            cleaned
         }
         evictCacheLocked()
         persistLocked()
@@ -156,13 +164,19 @@ class LocalKnowledgeStore(
     // ---- phrases ----
 
     override fun putPhrase(phrase: LearnedPhrase) = synchronized(lock) {
-        val existing = phrases[phrase.phrase]
+        val cleanPhrase = TranslationSanitizer.clean(phrase.phrase)
+        if (cleanPhrase.isBlank()) return@synchronized
+        val cleaned = phrase.copy(
+            phrase = cleanPhrase,
+            sourceSentence = TranslationSanitizer.clean(phrase.sourceSentence),
+        )
+        val existing = phrases[cleaned.phrase]
         val merged = if (existing != null) {
-            phrase.copy(
+            cleaned.copy(
                 usageCount = existing.usageCount + 1,
-                sourceSentence = if (existing.sourceSentence.isBlank()) phrase.sourceSentence else existing.sourceSentence,
+                sourceSentence = if (existing.sourceSentence.isBlank()) cleaned.sourceSentence else existing.sourceSentence,
             )
-        } else phrase
+        } else cleaned
         phrases[merged.phrase] = merged
         if (phrases.size > maxPhrases) {
             val oldest = phrases.values.sortedBy { it.lastUsedAt }
@@ -324,7 +338,12 @@ class LocalKnowledgeStore(
                             style = unb64(parts[11]),
                             locale = unb64(parts[12]),
                         )
-                        cache[e.normalizedSource] = e
+                        // Drop entries polluted by Google metadata tokens
+                        // (written by older builds) so stale garbage can
+                        // never surface from the persistent cache.
+                        if (!TranslationSanitizer.hasGarbage(e.twinglishText)) {
+                            cache[e.normalizedSource] = e
+                        }
                     }
                     "P" -> if (parts.size >= 7) {
                         val p = LearnedPreference(
@@ -344,7 +363,9 @@ class LocalKnowledgeStore(
                             usageCount = parts[3].toInt(),
                             lastUsedAt = parts[4].toLong(),
                         )
-                        phrases[p.phrase] = p
+                        if (!TranslationSanitizer.hasGarbage(p.phrase)) {
+                            phrases[p.phrase] = p
+                        }
                     }
                     "V" -> if (parts.size >= 5) {
                         val v = VocabularyWord(

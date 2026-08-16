@@ -2,6 +2,7 @@ package com.twinglish.keyboard.engine.translation
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -329,6 +330,38 @@ class GoogleTranslationProviderTest {
     // ------------------------------------------------------------------
     // the real provider still answers the phrase bank offline
     // ------------------------------------------------------------------
+
+    // ------------------------------------------------------------------
+    // TranslationSanitizer — Google metadata tokens must never surface
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `sanitizer strips a hash glued to the translation`() {
+        // This is exactly the user-visible corruption: the model id glued to
+        // the romanized word with no separator.
+        assertEquals(
+            "sinima ela undi",
+            TranslationSanitizer.clean("sinima ela undiee29150929b269c38979323546d85c49"),
+        )
+    }
+
+    @Test
+    fun `sanitizer strips separated hash and model file tokens`() {
+        assertEquals(
+            "సినిమా ఎలా ఉంది",
+            TranslationSanitizer.clean(
+                "సినిమా ఎలా ఉంది ee29150929b269c38979323546d85c49 tea_DravidianA_en2knmlsitate_2021q3.md",
+            ),
+        )
+    }
+
+    @Test
+    fun `sanitizer detects garbage and leaves clean text alone`() {
+        assertTrue(TranslationSanitizer.hasGarbage("sinima ela undiee29150929b269c38979323546d85c49"))
+        assertTrue(TranslationSanitizer.hasGarbage("tea_DravidianA_en2knmlsitate_2021q3.md"))
+        assertFalse(TranslationSanitizer.hasGarbage("sinima ela undi?"))
+        assertFalse(TranslationSanitizer.hasGarbage("nenu English ni automatic ga Twinglish ga marche"))
+    }
 
     @Test
     fun `real phrase bank sentences translate without touching the network`() = runBlocking {

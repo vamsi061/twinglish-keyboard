@@ -6,6 +6,7 @@ import com.twinglish.keyboard.engine.personalization.LearningFlags
 import com.twinglish.keyboard.engine.personalization.LocalKnowledgeStore
 import com.twinglish.keyboard.engine.personalization.PersonalizationEngine
 import com.twinglish.keyboard.engine.personalization.PersonalizedRanker
+import com.twinglish.keyboard.engine.personalization.TranslationCacheEntry
 import com.twinglish.keyboard.engine.translation.RomanizationStyle
 import com.twinglish.keyboard.engine.translation.TranslationProvider
 import com.twinglish.keyboard.engine.translation.TranslationResult
@@ -216,6 +217,50 @@ class PersonalizationEngineTest {
         val (personal, _, _) = setup(flags)
         val result = personal.translateAndRank("What are you doing?", TranslationStyle.CASUAL, RomanizationStyle.CASUAL)
         assertEquals("em chestunnav?", result!!.candidates.first().text)
+    }
+
+    // ---- Google metadata tokens must never survive in the cache ----
+
+    @Test
+    fun `garbage text is cleaned before entering the cache`() {
+        val store = LocalKnowledgeStore(path = null)
+        store.putCache(
+            TranslationCacheEntry(
+                normalizedSource = "how is the movie",
+                teluguText = null,
+                twinglishText = "sinima ela undiee29150929b269c38979323546d85c49",
+                createdAt = 1000L,
+                lastUsedAt = 1000L,
+                style = "casual",
+            )
+        )
+        assertEquals("sinima ela undi", store.getCache("how is the movie")!!.twinglishText)
+    }
+
+    @Test
+    fun `polluted entries persisted by older builds are purged on reload`() {
+        val tmp = java.io.File.createTempFile("twinglish_polluted", ".data")
+        tmp.deleteOnExit()
+        val b64 = { s: String ->
+            java.util.Base64.getEncoder().encodeToString(s.toByteArray(Charsets.UTF_8))
+        }
+        // Hand-written "v1" line exactly as the old build would have written
+        // it when the Google model hash leaked into a cached translation.
+        val corruptLine = "C|" + b64("how is the movie") + "|" + b64("") + "|" +
+            b64("sinima ela undiee29150929b269c38979323546d85c49") + "|" + b64("google+offline") +
+            "|1000|1000|1|0.95|1|1|" + b64("casual") + "|" + b64("en")
+        val cleanLine = "C|" + b64("how are you") + "|" + b64("") + "|" +
+            b64("ela unnav?") + "|" + b64("offline") +
+            "|1000|1000|1|0.95|0|0|" + b64("casual") + "|" + b64("en")
+        tmp.writeText("v1\n$corruptLine\n$cleanLine\n")
+
+        val store = LocalKnowledgeStore(path = tmp.absolutePath)
+        // Corrupt entry gone…
+        assertEquals(null, store.getCache("how is the movie"))
+        // …while the clean entry survives.
+        assertEquals("ela unnav?", store.getCache("how are you")!!.twinglishText)
+        tmp.delete()
+        Unit
     }
 
     // ---- persistence round-trip ----

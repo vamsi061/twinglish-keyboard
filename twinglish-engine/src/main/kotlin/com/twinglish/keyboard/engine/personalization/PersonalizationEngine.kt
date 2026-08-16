@@ -2,6 +2,7 @@ package com.twinglish.keyboard.engine.personalization
 
 import com.twinglish.keyboard.engine.TwinglishEngine
 import com.twinglish.keyboard.engine.translation.RomanizationStyle
+import com.twinglish.keyboard.engine.translation.TranslationSanitizer
 import com.twinglish.keyboard.engine.translation.TranslationStyle
 
 /** Result of one personalized translation request. */
@@ -46,19 +47,24 @@ class PersonalizationEngine(
         val ts = System.currentTimeMillis()
 
         // 1. Exact cache hit — user-approved or previously generated.
-        store.getCache(norm)?.let { hit ->
-            store.putCache(hit.copy(lastUsedAt = ts, usageCount = hit.usageCount + 1))
-            return RankedResult(
-                candidates = listOf(
-                    Candidate(
-                        text = hit.twinglishText,
-                        quality = hit.confidence,
-                        style = TranslationStyle.fromId(hit.style),
-                        approved = hit.userApproved,
-                    )
-                ),
-                cacheHit = true,
-            )
+        store.getCache(norm)?.let { raw ->
+            // Defense in depth: never let a polluted entry surface, even if
+            // an older build persisted one before the load-time purge.
+            val cleaned = TranslationSanitizer.clean(raw.twinglishText)
+            if (cleaned.isNotBlank()) {
+                store.putCache(raw.copy(twinglishText = cleaned, lastUsedAt = ts, usageCount = raw.usageCount + 1))
+                return RankedResult(
+                    candidates = listOf(
+                        Candidate(
+                            text = cleaned,
+                            quality = raw.confidence,
+                            style = TranslationStyle.fromId(raw.style),
+                            approved = raw.userApproved,
+                        )
+                    ),
+                    cacheHit = true,
+                )
+            }
         }
 
         // 2. Generate candidates from the local model (never token-by-token).
@@ -71,8 +77,10 @@ class PersonalizationEngine(
             } else {
                 result.twinglish
             }
-            if (candidates.none { it.text == text }) {
-                candidates += Candidate(text = text, quality = result.confidence, style = s)
+            val cleaned = TranslationSanitizer.clean(text)
+            if (cleaned.isBlank()) continue
+            if (candidates.none { it.text == cleaned }) {
+                candidates += Candidate(text = cleaned, quality = result.confidence, style = s)
             }
         }
         if (candidates.isEmpty()) return null
