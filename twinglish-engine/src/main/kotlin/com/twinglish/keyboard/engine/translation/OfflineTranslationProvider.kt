@@ -55,6 +55,7 @@ class OfflineTranslationProvider : TranslationProvider {
         Rule(Regex("^how is it going$"), "ఎలా ఉంది?"),
         Rule(Regex("^how much is this$"), "ఇది ఎంత?"),
         Rule(Regex("^how much$"), "ఎంత?"),
+        Rule(Regex("^how is (.+)$"), "\$1 ఎలా ఉంది?", 0.8f),
 
         // ---- where … ----
         Rule(Regex("^where are you going tomorrow$"), "రేపు ఎక్కడికి వెళ్తున్నావు?"),

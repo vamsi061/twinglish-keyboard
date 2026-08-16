@@ -186,6 +186,44 @@ class GoogleTranslationProviderTest {
     }
 
     @Test
+    fun `interrogative without typed punctuation still gets a question mark`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "సినిమా ఎలా ఉంది" }, // Google omits the "?" when input had none
+        )
+
+        val result = provider.translateEnglishToTelugu("how is the movie", TranslationStyle.CASUAL)
+        assertEquals("సినిమా ఎలా ఉంది?", result!!.telugu)
+        assertEquals("sinima ela undi?", result.twinglish)
+    }
+
+    @Test
+    fun `statements never gain a spurious question mark`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "నేను మార్కెట్ కి వెళ్తున్నాను" },
+        )
+
+        val result = provider.translateEnglishToTelugu("i am going to the market", TranslationStyle.CASUAL)
+        assertEquals("నేను మార్కెట్ కి వెళ్తున్నాను", result!!.telugu)
+        assertTrue(result.twinglish.endsWith("anu") && !result.twinglish.endsWith("?"))
+    }
+
+    @Test
+    fun `already punctuated google output is not doubled`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "సినిమా ఎలా ఉంది?" },
+        )
+
+        val result = provider.translateEnglishToTelugu("how is the movie", TranslationStyle.CASUAL)
+        assertEquals("సినిమా ఎలా ఉంది?", result!!.telugu)
+    }
+
+    @Test
     fun `already casual telugu is unchanged by the casualizer`() = runBlocking {
         val provider = GoogleTranslationProvider(
             offline = FakeOffline(null),

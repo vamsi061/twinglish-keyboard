@@ -141,6 +141,21 @@ class TwinglishEngineTest {
     }
 
     @Test
+    fun `how is the movie is a question with question mark`() {
+        assertEquals("sinima ela undi?", t("how is the movie"))
+    }
+
+    @Test
+    fun `how is the movie with typed question mark`() {
+        assertEquals("sinima ela undi?", t("How is the movie?"))
+    }
+
+    @Test
+    fun `how is your day`() {
+        assertEquals("nee roju ela undi?", t("How is your day?"))
+    }
+
+    @Test
     fun `do you want coffee`() {
         assertEquals("neeku coffee kavala?", t("Do you want coffee?"))
     }

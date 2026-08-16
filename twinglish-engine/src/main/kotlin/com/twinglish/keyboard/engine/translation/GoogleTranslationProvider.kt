@@ -64,10 +64,13 @@ class GoogleTranslationProvider(
         } ?: return offlineResult
 
         val styled = if (style == TranslationStyle.CASUAL) casualize(telugu) else telugu
+        // Interrogative sentences keep their "?" even when the user typed
+        // no punctuation ("how is the movie" → "సినిమా ఎలా ఉంది?").
+        val withQuestion = ensureQuestionMark(normalized, styled)
         return TranslationResult(
             input = trimmed,
-            telugu = styled,
-            twinglish = Romanizer.romanize(styled, RomanizationStyle.CASUAL),
+            telugu = withQuestion,
+            twinglish = Romanizer.romanize(withQuestion, RomanizationStyle.CASUAL),
             confidence = 0.95f,
             style = style,
         )
@@ -184,6 +187,27 @@ class GoogleTranslationProvider(
 
     private fun normalize(text: String): String =
         text.lowercase().trim().replace(Regex("\\s+"), " ")
+
+    /** Question openers — how/what/where/when/why/who/which/do/did/are/… */
+    private val questionStarters = listOf(
+        "how", "what", "where", "when", "why", "who", "whom", "whose",
+        "which", "do", "does", "did", "are", "is", "was", "were",
+        "will", "would", "can", "could", "should", "shall", "may", "might",
+        "have", "has", "had", "am",
+    )
+
+    /**
+     * Append "?" to an interrogative translation that has no terminal
+     * punctuation. Statements ("i am going home") are left untouched.
+     */
+    private fun ensureQuestionMark(normalizedInput: String, telugu: String): String {
+        if (telugu.lastOrNull()?.let { it in "?!." } == true) return telugu
+        val first = normalizedInput.substringBefore(' ')
+        if (first in questionStarters) return "$telugu?"
+        // "you coming?"-style ellipsis questions
+        if (normalizedInput.endsWith("?")) return "$telugu?"
+        return telugu
+    }
 
     /** Formal → casual chat substitutions (reverse of the offline polite set). */
     private val casualTransforms = listOf(
