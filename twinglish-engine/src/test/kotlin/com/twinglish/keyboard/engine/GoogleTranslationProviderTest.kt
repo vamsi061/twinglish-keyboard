@@ -58,6 +58,21 @@ class GoogleTranslationProviderTest {
     }
 
     @Test
+    fun `google model metadata embedded in a segment is never appended`() {
+        // Real gtx payload: Google embeds its internal model id + filename as a
+        // nested array inside the segment. Only the actual translation may be
+        // extracted — the model hash must not leak into the output.
+        val body = """[[["హలో ఎలా ఉన్నావు","hlo how are you",null,null,3,null,null,[[]],[[["ee29150929b269c38979323546d85c49","tea_DravidianA_en2knmlsitate_2021q3.md"]]]]],null,"en",null,null,null,null,[]]"""
+        assertEquals("హలో ఎలా ఉన్నావు", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
+    fun `model metadata with capitalised input is also stripped`() {
+        val body = """[[["హలో ఎలా ఉన్నారు","Hlo how are you",null,null,3,null,null,[[]],[[["ee29150929b269c38979323546d85c49","tea_DravidianA_en2knmlsitate_2021q3.md"]]]]],null,"en",null,null,null,null,[]]"""
+        assertEquals("హలో ఎలా ఉన్నారు", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
     fun `returns null for garbage payloads`() {
         assertNull(GoogleTranslationProvider.parseGtxResponse("not json at all"))
         assertNull(GoogleTranslationProvider.parseGtxResponse("""{"error":"nope"}"""))
@@ -209,6 +224,19 @@ class GoogleTranslationProviderTest {
         val result = provider.translateEnglishToTelugu("i am going to the market", TranslationStyle.CASUAL)
         assertEquals("నేను మార్కెట్ కి వెళ్తున్నాను", result!!.telugu)
         assertTrue(result.twinglish.endsWith("anu") && !result.twinglish.endsWith("?"))
+    }
+
+    @Test
+    fun `greeting followed by a question still gets a question mark`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "హలో ఎలా ఉన్నావు" }, // Google omits the "?" when input had none
+        )
+
+        val result = provider.translateEnglishToTelugu("hlo how are you", TranslationStyle.CASUAL)
+        assertEquals("హలో ఎలా ఉన్నావు?", result!!.telugu)
+        assertEquals("halo ela unnav?", result.twinglish)
     }
 
     @Test

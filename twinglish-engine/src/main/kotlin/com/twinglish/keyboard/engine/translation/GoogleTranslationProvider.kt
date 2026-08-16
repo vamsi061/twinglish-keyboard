@@ -123,56 +123,75 @@ class GoogleTranslationProvider(
 
         /**
          * Parse the gtx payload: [[["telugu","english",…],[…]],null,"en",…].
-         * The first inner array holds the translation segments; the trailing
+         * The first element holds the translation segments; the trailing
          * ["en"],["te"]] arrays are source/target language metadata and must
-         * NOT be treated as segments. Every real segment starts with
-         * "…","…" — the first string of each pair is the translated Telugu.
-         * Returns null when nothing useful is found.
+         * NOT be treated as segments.
+         *
+         * Every real segment is an array at bracket depth 3 whose FIRST string
+         * is the translated Telugu. Google sometimes embeds extra nested arrays
+         * inside a segment carrying its internal model info — e.g.
+         * [[["ee29150929…","tea_…md"]]] — and those strings (model ids) must
+         * never leak into the translation. Only strings sitting immediately at
+         * the top of a depth-3 segment are collected, so nested metadata is
+         * skipped. Returns null when nothing useful is found.
          */
         internal fun parseGtxResponse(body: String): String? {
             val start = body.indexOf("[[[")
             if (start < 0) return null
 
-            // Scan to the end of the first segment array: bracket depth
-            // starts at 3 ([[[) and the segments array closes when it drops
-            // back to 1 (the outermost [). String contents are skipped so
-            // brackets inside quoted text never confuse the scan.
             var depth = 0
-            var end = start
+            var i = start
             var inString = false
             var escaped = false
-            while (end < body.length) {
-                val c = body[end]
+            var expectSegmentString = false
+            var captureStart = -1
+            val fragments = mutableListOf<String>()
+
+            while (i < body.length) {
+                val c = body[i]
                 if (inString) {
-                    if (escaped) escaped = false
-                    else if (c == '\\') escaped = true
-                    else if (c == '"') inString = false
+                    if (escaped) {
+                        escaped = false
+                    } else if (c == '\\') {
+                        escaped = true
+                    } else if (c == '"') {
+                        if (captureStart >= 0) {
+                            fragments.add(unescape(body.substring(captureStart, i)))
+                            captureStart = -1
+                        }
+                        inString = false
+                    }
                 } else {
                     when (c) {
-                        '"' -> inString = true
-                        '[' -> depth++
+                        '"' -> {
+                            if (expectSegmentString) {
+                                captureStart = i + 1
+                                expectSegmentString = false
+                            }
+                            inString = true
+                        }
+                        '[' -> {
+                            depth++
+                            expectSegmentString = depth == 3
+                        }
                         ']' -> {
+                            expectSegmentString = false
                             depth--
                             if (depth == 1) {
-                                end++
+                                i++
                                 break
                             }
                         }
+                        ',' -> expectSegmentString = false
                     }
                 }
-                end++
+                i++
             }
 
-            val segmentSection = body.substring(start, end)
-            val segmentRegex = Regex("\\[\"((?:[^\"\\\\]|\\\\.)*)\"")
-            val sb = StringBuilder()
-            var matches = 0
-            for (m in segmentRegex.findAll(segmentSection)) {
-                sb.append(unescape(m.groupValues[1]))
-                matches++
-            }
-            if (matches == 0) return null
-            val out = sb.toString().trim()
+            if (fragments.isEmpty()) return null
+            // Join fragments with a single space; Google sometimes splits mid-
+            // sentence with leading/trailing whitespace on the fragments.
+            val out = fragments.joinToString(" ").replace(Regex("\\s+"), " ").trim()
             return out.ifBlank { null }
         }
 
@@ -196,14 +215,20 @@ class GoogleTranslationProvider(
         "have", "has", "had", "am",
     )
 
+    /** Greeting words that can precede a question ("hi how are you" → "how"). */
+    private val greetings = listOf("hi", "hello", "hey", "hlo", "hii", "hai", "yo")
+
     /**
      * Append "?" to an interrogative translation that has no terminal
      * punctuation. Statements ("i am going home") are left untouched.
      */
     private fun ensureQuestionMark(normalizedInput: String, telugu: String): String {
         if (telugu.lastOrNull()?.let { it in "?!." } == true) return telugu
-        val first = normalizedInput.substringBefore(' ')
-        if (first in questionStarters) return "$telugu?"
+        // Skip a leading greeting so "hlo how are you" still reads as a question.
+        var check = normalizedInput
+        val first = check.substringBefore(' ')
+        if (first in greetings) check = check.substringAfter(' ', check)
+        if (check.substringBefore(' ') in questionStarters) return "$telugu?"
         // "you coming?"-style ellipsis questions
         if (normalizedInput.endsWith("?")) return "$telugu?"
         return telugu
