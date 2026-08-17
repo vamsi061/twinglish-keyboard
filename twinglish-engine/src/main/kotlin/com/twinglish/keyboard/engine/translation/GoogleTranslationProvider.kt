@@ -241,8 +241,47 @@ class GoogleTranslationProvider(
             return out.ifBlank { null }
         }
 
-        private fun unescape(s: String): String =
-            s.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n")
+        /**
+         * Full JSON string unescape for a captured segment. Google encodes
+         * special characters as JSON escapes — notably `&` as `\u0026` — so
+         * a plain `\`/`"`/`\n` replacement would leak the literal text
+         * `\u0026` into the translation. `\uXXXX` sequences decode to their
+         * character (surrogate pairs decode naturally, since each half is a
+         * separate `\u` escape).
+         */
+        private fun unescape(s: String): String {
+            val out = StringBuilder(s.length)
+            var i = 0
+            while (i < s.length) {
+                val c = s[i]
+                if (c == '\\' && i + 1 < s.length) {
+                    when (s[i + 1]) {
+                        '"' -> { out.append('"'); i += 2; continue }
+                        '\\' -> { out.append('\\'); i += 2; continue }
+                        '/' -> { out.append('/'); i += 2; continue }
+                        'n' -> { out.append('\n'); i += 2; continue }
+                        't' -> { out.append('\t'); i += 2; continue }
+                        'r' -> { out.append('\r'); i += 2; continue }
+                        'b' -> { out.append('\b'); i += 2; continue }
+                        'f' -> { out.append('\u000C'); i += 2; continue }
+                        'u' -> {
+                            if (i + 5 < s.length) {
+                                val hex = s.substring(i + 2, i + 6)
+                                val code = hex.toIntOrNull(16)
+                                if (code != null) {
+                                    out.append(code.toChar())
+                                    i += 6
+                                    continue
+                                }
+                            }
+                        }
+                    }
+                }
+                out.append(c)
+                i++
+            }
+            return out.toString()
+        }
     }
 
     // ------------------------------------------------------------------

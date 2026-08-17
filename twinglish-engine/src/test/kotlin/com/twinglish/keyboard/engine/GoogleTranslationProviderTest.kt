@@ -59,6 +59,22 @@ class GoogleTranslationProviderTest {
     }
 
     @Test
+    fun `json unicode escapes like ampersand decode to the real character`() {
+        // Google JSON-encodes special characters ("&" → \u0026) inside
+        // segment strings; the literal escape text must never leak into the
+        // translation. The payload below contains the raw 6-character escape
+        // exactly as Google sends it.
+        val body = """[[["పూర్ \u0026 సినిమా ఎలా ఉంది","how is the movie & all",null,null,10]],null,"en"]"""
+        assertEquals("పూర్ & సినిమా ఎలా ఉంది", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
+    fun `a bare ampersand segment decodes instead of showing u0026`() {
+        val body = """[[["\u0026","&",null,null,10]],null,"en"]"""
+        assertEquals("&", GoogleTranslationProvider.parseGtxResponse(body))
+    }
+
+    @Test
     fun `google model metadata embedded in a segment is never appended`() {
         // Real gtx payload: Google embeds its internal model id + filename as a
         // nested array inside the segment. Only the actual translation may be
@@ -484,6 +500,21 @@ class GoogleTranslationProviderTest {
         // Old on-device cache entries can carry ZWNJ inside romanized text.
         assertEquals("lyab lanu", TranslationSanitizer.clean("lyab\u200Clanu"))
         assertEquals("sinima ela undi", TranslationSanitizer.clean("sinima ela undi\u200D"))
+    }
+
+    @Test
+    fun `sanitizer decodes json unicode escapes from persisted entries`() {
+        // An older build could persist the literal "\u0026" text into the
+        // cache; it must be healed back to "&" at every read boundary.
+        assertEquals(
+            "nenu office ki vellanu & taravata call chesta",
+            TranslationSanitizer.clean(
+                "nenu office ki vellanu \u0026 taravata call chesta",
+            ),
+        )
+        // A literal zero-width escape also becomes the real char and is
+        // handled by the zero-width cleanup.
+        assertEquals("lyab lanu", TranslationSanitizer.clean("lyab \u200Clanu"))
     }
 
     @Test

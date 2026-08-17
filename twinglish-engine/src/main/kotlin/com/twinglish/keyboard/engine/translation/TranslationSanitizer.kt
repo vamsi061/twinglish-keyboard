@@ -32,6 +32,13 @@ object TranslationSanitizer {
     // (matching the provider + romanizer); the rest are dropped.
     private val ZERO_WIDTH = Regex("[\\u200B\\u200D\\u2060\\uFEFF]")
 
+    // JSON `\uXXXX` escapes. Google encodes special characters this way
+    // (e.g. "&" → \u0026); if an escaped form was persisted by an older
+    // build it must decode back to the real character instead of showing
+    // literal "\u0026" text. Decoding runs before zero-width cleanup, so a
+    // literal `\u200c` escape also becomes the real ZWNJ and is handled.
+    private val UNICODE_ESCAPE = Regex("\\\\u([0-9a-fA-F]{4})")
+
     /** True when [text] contains any known Google metadata token. */
     fun hasGarbage(text: String): Boolean =
         HASH.containsMatchIn(text) || MODEL_FILE.containsMatchIn(text)
@@ -45,6 +52,9 @@ object TranslationSanitizer {
     fun clean(text: String): String {
         if (text.isBlank()) return text
         var out = text.replace(HASH, "").replace(MODEL_FILE, "")
+        out = out.replace(UNICODE_ESCAPE) { m ->
+            m.groupValues[1].toInt(16).toChar().toString()
+        }
         out = out.replace("\u200C", " ").replace(ZERO_WIDTH, "")
         out = out.replace(Regex("\\s{2,}"), " ").trim()
         return out
