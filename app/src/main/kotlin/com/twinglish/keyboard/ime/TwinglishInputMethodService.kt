@@ -61,6 +61,8 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private lateinit var editorPanel: android.widget.LinearLayout
     private lateinit var editorCaption: android.widget.TextView
     private lateinit var editorField: android.widget.EditText
+    /** Blinking caret drawn over [editorField] (the field never takes focus, so Android won't draw one). */
+    private lateinit var editorCaret: View
     private lateinit var keyboardView: KeyboardView
     private lateinit var contentFrame: FrameLayout
     private lateinit var emojiPanel: EmojiPanelView
@@ -222,27 +224,64 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
                 textSize = 16f
                 setTextColor(currentColors().text)
                 setHintTextColor(currentColors().hint)
-                setPadding(dp(14), dp(2), dp(14), dp(2))
+                hint = "Edit your translation"
+                includeFontPadding = false
+                setPadding(dp(12), 0, dp(12), 0)
+                // Subtle rounded input-box look on the blue surface.
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(0x22FFFFFF)
+                }
                 // Never take focus or the system input connection — the
                 // keyboard stays attached to the host editor the whole time.
+                // Because the field has no focus, Android draws no caret, so
+                // a custom blinking caret ([editorCaret]) is drawn instead.
                 isFocusable = false
                 isFocusableInTouchMode = false
-                // Tap-to-position the caret (selection is managed manually).
+                // Tap-to-position the caret at the exact tapped character
+                // (selection is managed manually).
                 setOnTouchListener { v, ev ->
                     if (ev.action == android.view.MotionEvent.ACTION_UP) {
                         val field = v as android.widget.EditText
-                        val width = field.width.toFloat().coerceAtLeast(1f)
-                        val frac = (ev.x / width).coerceIn(0f, 1f)
-                        field.setSelection((frac * field.text.length).toInt())
+                        val layout = field.layout
+                        if (layout != null) {
+                            val x = (ev.x - field.paddingLeft).coerceAtLeast(0f)
+                            field.setSelection(layout.getOffsetForHorizontal(0, x))
+                        } else {
+                            val width = field.width.toFloat().coerceAtLeast(1f)
+                            field.setSelection(((ev.x / width) * field.text.length).toInt())
+                        }
+                        updateEditorCaret()
                     }
                     true
                 }
             }
+            val editorFieldWrap = FrameLayout(context).apply {
+                addView(editorField, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+                // The visible caret: a thin blinking bar at the selection.
+                editorCaret = View(context).apply {
+                    setBackgroundColor(currentColors().text)
+                    visibility = View.GONE
+                }
+                addView(
+                    editorCaret,
+                    FrameLayout.LayoutParams(dp(2), dp(20), Gravity.START or Gravity.CENTER_VERTICAL),
+                )
+            }
             val row = android.widget.LinearLayout(context).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
-                addView(editorField, android.widget.LinearLayout.LayoutParams(0, dp(44), 1f))
-                addView(editorButton("Save") { saveEdit() }, android.widget.LinearLayout.LayoutParams(dp(76), dp(44)))
-                addView(editorButton("Cancel") { cancelEdit() }, android.widget.LinearLayout.LayoutParams(dp(76), dp(44)))
+                addView(
+                    editorFieldWrap,
+                    android.widget.LinearLayout.LayoutParams(0, dp(44), 1f),
+                )
+                addView(
+                    editorIconButton(R.drawable.ic_done, "Save translation") { saveEdit() },
+                    android.widget.LinearLayout.LayoutParams(dp(48), dp(44)),
+                )
+                addView(
+                    editorIconButton(R.drawable.ic_close, "Cancel editing") { cancelEdit() },
+                    android.widget.LinearLayout.LayoutParams(dp(48), dp(44)),
+                )
             }
             addView(editorCaption, android.widget.LinearLayout.LayoutParams(MATCH_PARENT, dp(20)))
             addView(row, android.widget.LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
@@ -457,6 +496,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             editorField.setTextColor(c.text)
             editorField.setHintTextColor(c.hint)
         }
+        if (::editorCaret.isInitialized) editorCaret.setBackgroundColor(c.text)
         if (::bottomBar.isInitialized) {
             bottomBar.background = android.graphics.drawable.ColorDrawable(c.toolbarBackground)
         }
@@ -859,6 +899,12 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         strip.suggestions = emptyList()
         editorPanel.isVisible = true
         editorMode = true
+        // Show + start blinking the caret at the end of the text. Position
+        // is computed after the panel has been laid out (a freshly-shown
+        // panel has no layout yet on this frame).
+        editorCaret.isVisible = true
+        editorPanel.post { updateEditorCaret() }
+        editorPanel.postDelayed(caretBlink, 520)
     }
 
     /** While the editor is open, route the keyboard into the editor field. */
@@ -877,7 +923,10 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             KeyAction.SPACE -> insertIntoEditor(" ")
             KeyAction.BACKSPACE -> {
                 val pos = editorField.selectionStart.coerceAtLeast(0)
-                if (pos > 0) editorField.text.delete(pos - 1, pos)
+                if (pos > 0) {
+                    editorField.text.delete(pos - 1, pos)
+                    updateEditorCaret()
+                }
             }
             KeyAction.SHIFT -> toggleShift()
             KeyAction.ENTER -> saveEdit()
@@ -888,6 +937,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private fun insertIntoEditor(text: String) {
         val pos = editorField.selectionStart.coerceAtLeast(0)
         editorField.text.insert(pos, text)
+        updateEditorCaret()
     }
 
     private fun saveEdit() {
@@ -935,23 +985,53 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
 
     private fun closeEditor() {
         editorMode = false
+        editorPanel.removeCallbacks(caretBlink)
+        if (::editorCaret.isInitialized) editorCaret.isVisible = false
         editorPanel.isVisible = false
         updateSuggestions(currentSentence)
     }
 
-    /** Rounded accent button used by the correction editor panel. */
-    private fun editorButton(label: String, onClick: () -> Unit): android.widget.TextView =
-        android.widget.TextView(this).apply {
-            text = label
-            gravity = android.view.Gravity.CENTER
-            textSize = 14f
-            setTextColor(android.graphics.Color.WHITE)
+    /** Rounded icon button used by the correction editor (check / close). */
+    private fun editorIconButton(drawableRes: Int, contentDescription: String, onClick: () -> Unit): android.widget.ImageButton =
+        android.widget.ImageButton(this).apply {
+            setImageResource(drawableRes)
+            this.contentDescription = contentDescription
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = dp(8).toFloat()
                 setColor(currentColors().enterKey)
             }
             setOnClickListener { onClick() }
         }
+
+    /**
+     * Move the blinking caret to the editor field's selection point. The
+     * field never has focus, so Android draws no caret — this bar is the
+     * visible replacement, positioned from the text layout.
+     */
+    private fun updateEditorCaret() {
+        if (!::editorCaret.isInitialized || !editorMode) return
+        val layout = editorField.layout ?: return
+        val sel = editorField.selectionStart.coerceAtLeast(0)
+        val x = layout.getPrimaryHorizontal(sel) + editorField.paddingLeft
+        val lp = editorCaret.layoutParams as FrameLayout.LayoutParams
+        lp.leftMargin = x.toInt().coerceAtLeast(0)
+        editorCaret.layoutParams = lp
+    }
+
+    /** Blinks the editor caret (~2 Hz) while the correction panel is open. */
+    private val caretBlink = object : Runnable {
+        override fun run() {
+            if (!::editorCaret.isInitialized) return
+            if (editorMode) {
+                editorCaret.isVisible = !editorCaret.isVisible
+                editorPanel.postDelayed(this, 520)
+            } else {
+                editorCaret.isVisible = false
+            }
+        }
+    }
 
 
     /**
