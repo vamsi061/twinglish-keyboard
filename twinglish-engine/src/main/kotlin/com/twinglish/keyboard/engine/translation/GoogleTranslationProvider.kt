@@ -332,6 +332,34 @@ class GoogleTranslationProvider(
         "ఉంటున్నారు" to "ఉంటున్నావు",
         "మీరు" to "నువ్వు",
         "మీకు" to "నీకు",
+        // ---- I-form chat endings: Google's textbook "నేను చేస్తున్నాను" is
+        //      what makes output feel like a bot; chat drops the final -ను
+        //      (చేస్తున్నా → chestunna, చేశా → chesa, చేస్తా → chesta) ----
+        "చేస్తున్నాను" to "చేస్తున్నా",
+        "వెళ్తున్నాను" to "వెళ్తున్నా",
+        "వస్తున్నాను" to "వస్తున్నా",
+        "చూస్తున్నాను" to "చూస్తున్నా",
+        "తింటున్నాను" to "తింటున్నా",
+        "మాట్లాడుతున్నాను" to "మాట్లాడుతున్నా",
+        "చేశాను" to "చేశా",
+        "వచ్చాను" to "వచ్చా",
+        "వెళ్ళాను" to "వెళ్ళా",
+        "చూశాను" to "చూశా",
+        "తిన్నాను" to "తిన్నా",
+        "చేస్తాను" to "చేస్తా",
+        "వస్తాను" to "వస్తా",
+        "వెళ్తాను" to "వెళ్తా",
+        "చూస్తాను" to "చూస్తా",
+        "తింటాను" to "తింటా",
+        "ఉంటాను" to "ఉంటా",
+        "ఉన్నాను" to "ఉన్నా",
+        "చదువుతున్నాను" to "చదువుతున్నా",
+        // ---- ఏమి → ఏం : "ఏమి చేస్తున్నావు" → "ఏం చేస్తున్నావు" (emi → em), and
+        //      ఏమిటి → ఏంటి (emiti → enti, the chat form) ----
+        "ఏమిటి" to "ఏంటి",
+        "ఏమి" to "ఏం",
+        // ---- మీ (your) → నీ (your) when not already మీరు/మీకు ----
+        "మీ " to "నీ ",
     )
 
     /**
@@ -342,10 +370,13 @@ class GoogleTranslationProvider(
      */
     private fun casualize(telugu: String): String {
         var out = telugu
-        for ((formal, casual) in casualTransforms) {
+        // Vocabulary first, then verb-form transforms: the vocabulary can
+        // produce full I-forms (సృష్టించాను → తయారు చేశాను) and the
+        // transforms must still shorten them (→ తయారు చేశా, not చేశాను).
+        for ((formal, casual) in casualVocabulary) {
             out = out.replace(formal, casual)
         }
-        for ((formal, casual) in casualVocabulary) {
+        for ((formal, casual) in casualTransforms) {
             out = out.replace(formal, casual)
         }
         return out.trim().replace(Regex("\\s{2,}"), " ")

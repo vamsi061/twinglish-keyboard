@@ -133,6 +133,7 @@ object Romanizer {
         "baagunnava" to "bagunnava",
         "baagoledu" to "bagoledu",
         "baagupadu" to "bagupadu",
+        "baagunda" to "bagunda",
         "baadhaga" to "badhaga",
         // చాలా → chala
         "chaala" to "chala",
@@ -168,6 +169,26 @@ object Romanizer {
         "mallee" to "malli",
         // మరోసారి → marosari (not marosaari)
         "marosaari" to "marosari",
+        // కాసేపు → kasepu (not kaasepu)
+        "kaasepu" to "kasepu",
+        // ఖాళీగా → khaali ga (not khaaleega)
+        "khaaleega" to "khaali ga",
+        // దాదాపు → dadapu (not daadaapu)
+        "daadaapu" to "dadapu",
+        // త్వరలో → tvarala (not tvaralo)
+        "tvaralo" to "tvarala",
+        // చేశా → chesa (not chesha) — chat drops the h after ch
+        "chesha" to "chesa",
+        // వచ్చా → vacha (not vachcha)
+        "vachcha" to "vacha",
+        // చూశా → choosa (not chusha)
+        "chusha" to "choosa",
+        // ఖరీదు → kharidu (not khareedu)
+        "khareedu" to "kharidu",
+        // నిద్రపోయావా → nidrapoyava (not nidrapoyaava) — chat question form
+        "nidrapoyaava" to "nidrapoyava",
+        // నచ్చింది → nachindi (not nachchindi) — chat drops the double ch
+        "nachchindi" to "nachindi",
     )
 
     // Anusvara assimilates to the following consonant's place of articulation

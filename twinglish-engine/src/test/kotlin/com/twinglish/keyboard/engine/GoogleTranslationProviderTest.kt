@@ -113,7 +113,8 @@ class GoogleTranslationProviderTest {
         )
 
         val result = provider.translateEnglishToTelugu("i am going to market", TranslationStyle.CASUAL)
-        assertEquals("నేను మార్కెట్ కి వెళ్తున్నాను", result!!.telugu)
+        // CASUAL drops the formal -ను: వెళ్తున్నాను → వెళ్తున్నా (velthunna).
+        assertEquals("నేను మార్కెట్ కి వెళ్తున్నా", result!!.telugu)
         assertEquals(1, offline.calls)
     }
 
@@ -265,8 +266,9 @@ class GoogleTranslationProviderTest {
         )
 
         val result = provider.translateEnglishToTelugu("i am going to the market", TranslationStyle.CASUAL)
-        assertEquals("నేను మార్కెట్ కి వెళ్తున్నాను", result!!.telugu)
-        assertTrue(result.twinglish.endsWith("anu") && !result.twinglish.endsWith("?"))
+        // CASUAL drops the formal -ను: వెళ్తున్నాను → వెళ్తున్నా (velthunna).
+        assertEquals("నేను మార్కెట్ కి వెళ్తున్నా", result!!.telugu)
+        assertTrue(result.twinglish.endsWith("unna") && !result.twinglish.endsWith("?"))
     }
 
     @Test
@@ -299,13 +301,14 @@ class GoogleTranslationProviderTest {
         )
         // Literary words become chat forms / code-switched English, the brand
         // name is preserved, and the joiners are gone.
+        // CASUAL drops the formal -ను: తయారు చేశాను → తయారు చేశా (chesa).
         assertEquals(
-            "నేను English ని automatic గా Twinglish గా మార్చే కొత్త app ని తయారు చేశాను",
+            "నేను English ని automatic గా Twinglish గా మార్చే కొత్త app ని తయారు చేశా",
             result!!.telugu,
         )
         // …and it romanizes to something a Telugu speaker would actually type.
         assertEquals(
-            "nenu English ni automatic ga Twinglish ga marche kotta app ni tayaaru chesanu",
+            "nenu English ni automatic ga Twinglish ga marche kotta app ni tayaaru chesa",
             result.twinglish,
         )
     }
