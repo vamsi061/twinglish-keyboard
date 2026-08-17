@@ -105,11 +105,13 @@ Run the tests (Twinglish engine + translation test cases):
 3. The suggestion strip shows `Ela unnav?` (debounced as you type).
 4. Tap the suggestion — the English phrase is replaced by the Twinglish
    result.
-5. **Correct a translation:** long-press the suggestion, edit the
-   Twinglish in the dialog that opens, and tap **Save**. The field is
-   updated with your version, and the engine learns it — the next time
-   the same (or a similar) sentence is typed, your corrected wording is
-   shown first.
+5. **Correct a translation:** long-press the suggestion — an editor
+   opens with a blinking cursor so you can see exactly where you're
+   typing (tap anywhere in the field to reposition). Edit the
+   Twinglish, then tap the **✓ (check)** button to apply or the **✕
+   (close)** button to cancel. The field is updated with your version,
+   and the engine learns it — the next time the same (or a similar)
+   sentence is typed, your corrected wording is shown first.
 6. Nothing is ever replaced automatically; tapping the suggestion is
    always your explicit choice.
 
@@ -142,16 +144,37 @@ The keyboard talks to the translation layer **only through**
 `TranslationProvider` (in `twinglish-engine`). The built-in
 `OfflineTranslationProvider` is a pattern-based grammar with a word
 dictionary fallback — not a hard-coded sentence table. It always answers
-first (exact, instant, offline); the optional `GoogleTranslationProvider`
-handles only the sentences the phrase bank can't translate.
+  first (exact, instant, offline); the optional `GoogleTranslationProvider`
+  handles only the sentences the phrase bank can't translate.
+
+### Human-chat output, not bot output
+
+Translations are tuned to sound like a person texting, not textbook
+Telugu: the offline bank covers everyday conversational sentences
+(greetings, plans, food, travel, sleep, work, feelings — e.g. "i am on
+my way" → *nenu vastunna*, "did you have lunch" → *lunch chesava?*,
+"i am bored" → *naaku bor kodutondi*), the Google path's casual style
+shortens formal verb endings (`నేను చేస్తున్నాను` → **chestunna**, not
+"chestunnanu"; `ఏమి` → **ఏం**; `మీ` → **నీ**), and the Romanizer uses
+common chat spellings (kasepu, khaali ga, nachindi, nidrapoyava,
+bagunda). Code-switched English loanwords stay English (`labs`,
+`update`, `content`, `video`, `office`, `meeting`, `call` — never
+"lyab" / "apdet"), and invisible zero-width characters that Google can
+embed in Telugu script are stripped before romanization, so the output
+is always clean roman characters.
 
 ### Caching & self-learning
 
 Every result is cached locally (bounded, ~5,000 entries, LRU eviction)
-with normalized keys — `How are you?`, `how are you?` and `how  are you?`
-all resolve to the same entry, so repeated sentences return in a few
-milliseconds without re-translating. The learning engine records **only
-meaningful events** — tapping a suggestion, long-pressing to correct it,
+with normalized keys — `How are you?`, `how are you?`, `how  are you?`
+and `HOW ARE YOU` all resolve to the same entry (case, repeated
+whitespace and trailing punctuation are folded), so repeated sentences
+return in a few milliseconds without re-translating — and without
+hitting Google again. Once a sentence has been translated (even online),
+it is always served from the local cache from then on.
+
+The learning engine records **only meaningful events** — tapping a
+suggestion, long-pressing to correct it,
 or typing over a shown suggestion — never raw keystrokes. Corrections
 learn word preferences with a confidence score that grows on every repeat
 (`movie → sinima` becomes strong after a couple of confirmations), and
