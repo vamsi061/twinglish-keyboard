@@ -66,6 +66,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
     private lateinit var emojiPanel: EmojiPanelView
     private lateinit var clipboardPanel: ClipboardPanelView
     private lateinit var bottomBar: FrameLayout
+    private lateinit var navGap: FrameLayout
 
     // State
     private var symbolPage = 0
@@ -260,6 +261,14 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             addView(chevron, FrameLayout.LayoutParams(dp(48), dp(32), Gravity.END or Gravity.CENTER_VERTICAL))
         }
 
+        // Small visible gap between the keyboard and the system navigation
+        // bar. Painted the board color so it reads as a light strip under the
+        // darker bottom bar; its bottom padding absorbs the nav inset so the
+        // gap is also visible behind a transparent gesture navigation bar.
+        navGap = FrameLayout(this).apply {
+            setBackgroundColor(currentColors().board)
+        }
+
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(toolbar, LinearLayout.LayoutParams(MATCH_PARENT, dp(44)))
@@ -267,6 +276,7 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             addView(editorPanel, LinearLayout.LayoutParams(MATCH_PARENT, dp(64)))
             addView(contentFrame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
             addView(bottomBar, LinearLayout.LayoutParams(MATCH_PARENT, dp(32)))
+            addView(navGap, LinearLayout.LayoutParams(MATCH_PARENT, dp(10)))
         }
 
         root = FrameLayout(this).apply {
@@ -275,10 +285,11 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             addView(popupOverlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
 
-        // Keep the keyboard above the system navigation bar.
+        // Keep the keyboard above the system navigation bar; the gap strip
+        // absorbs the inset so a visible gap always shows beneath the keyboard.
         root.setOnApplyWindowInsetsListener { _, insets ->
-            if (::bottomBar.isInitialized) {
-                bottomBar.setPadding(0, 0, 0, insets.systemWindowInsetBottom)
+            if (::navGap.isInitialized) {
+                navGap.setPadding(0, 0, 0, insets.systemWindowInsetBottom)
             }
             insets
         }
@@ -439,19 +450,20 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
         if (::bottomBar.isInitialized) {
             bottomBar.background = android.graphics.drawable.ColorDrawable(c.toolbarBackground)
         }
+        if (::navGap.isInitialized) navGap.setBackgroundColor(c.board)
         applyWindowColors(c)
         refreshHeight()
     }
 
     /**
      * Paint the system navigation/status bars to match the keyboard surface
-     * (the nav bar sits directly under the bottom bar, so it must share its
-     * color for a seamless look). Icons flip between light/dark by luminance.
+     * (the nav bar sits under the gap strip, so it shares the board color to
+     * keep the gap visible). Icons flip between light/dark by luminance.
      */
     private fun applyWindowColors(c: KeyboardColors) {
         runCatching {
             val w = getWindow().window ?: return@runCatching
-            w.navigationBarColor = c.toolbarBackground
+            w.navigationBarColor = c.board
             w.statusBarColor = c.board
             val controller = WindowCompat.getInsetsController(w, w.decorView)
             val lightIcons = luminance(c.toolbarBackground) > 0.5f
