@@ -28,6 +28,13 @@ object Romanizer {
     private const val ANUSVARA = '\u0C02'
     private const val VISARGA = '\u0C03'
 
+    // Zero-width format characters that Google sometimes embeds in Telugu
+    // (ZWNJ \u200c, ZWJ \u200d, ZWSP \u200b, …). They must never reach the
+    // romanized output. A non-joiner marks a syllable boundary so it becomes
+    // a space (matching the provider's cleanup); the rest are dropped.
+    private const val ZWNJ = '\u200C'
+    private val zeroWidth = setOf('\u200B', '\u200D', '\u2060', '\uFEFF')
+
     // Independent vowels → casual form (strict form differs for long vowels).
     private val vowels = mapOf(
         '\u0C05' to "a",   // అ
@@ -308,9 +315,23 @@ object Romanizer {
                 }
 
                 else -> {
-                    sb.append(c)
-                    clusterPending = false
-                    i++
+                    when {
+                        c == ZWNJ -> {
+                            // Non-joiner marks a syllable boundary → space
+                            // (ల్యాబ్\u200cలను → "lyab lanu").
+                            sb.append(' ')
+                            i++
+                        }
+                        c in zeroWidth -> {
+                            // ZWJ/ZWSP/… carry no sound — skip entirely.
+                            i++
+                        }
+                        else -> {
+                            sb.append(c)
+                            clusterPending = false
+                            i++
+                        }
+                    }
                 }
             }
         }

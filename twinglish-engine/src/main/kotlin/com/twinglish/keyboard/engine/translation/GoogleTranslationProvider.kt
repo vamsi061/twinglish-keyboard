@@ -89,7 +89,11 @@ class GoogleTranslationProvider(
             )
         }
 
-        val styled = if (style == TranslationStyle.CASUAL) casualize(telugu) else telugu
+        // Zero-width joiners and transliterated English loanwords are cleaned
+        // for EVERY style — a polite/formal candidate must never carry the
+        // "\u200c" garbage or a "lyab"-style mangling either.
+        val cleaned = cleanTelugu(telugu)
+        val styled = if (style == TranslationStyle.CASUAL) casualize(cleaned) else cleaned
         // Interrogative sentences keep their "?" even when the user typed
         // no punctuation ("how is the movie" → "సినిమా ఎలా ఉంది?").
         val withQuestion = ensureQuestionMark(normalized, styled)
@@ -337,17 +341,104 @@ class GoogleTranslationProvider(
      * Google's output untouched.
      */
     private fun casualize(telugu: String): String {
-        // Google inserts zero-width non-joiners (ట్విగ్లిష్\u200cగా) to stop
-        // conjunct formation. They mark a syllable boundary, so they become a
-        // space (Twinglish ga, app ni) rather than vanishing. The joiner is
-        // simply dropped.
-        var out = telugu.replace("\u200C", " ").replace("\u200D", "")
+        var out = telugu
         for ((formal, casual) in casualTransforms) {
             out = out.replace(formal, casual)
         }
         for ((formal, casual) in casualVocabulary) {
             out = out.replace(formal, casual)
         }
+        return out.trim().replace(Regex("\\s{2,}"), " ")
+    }
+
+    /**
+     * English code-switch substitutions for words Google renders in Telugu
+     * script, applied to EVERY style (not just CASUAL). Twinglish chat keeps
+     * these words in English — "labs", "update", "content", "video" — but
+     * Google transliterates them (ల్యాబ్, అప్డేట్, కంటెంట్, వీడియో) where
+     * they romanize badly ("lyab", "apdet", "veediyo"). Each key is the raw
+     * Google spelling (it may carry a zero-width non-joiner between the
+     * virama and the following letter) and its plain conjunct form. Longer
+     * keys MUST come before shorter ones because some contain others
+     * ("ల్యాబ్\u200cలను" contains "ల్యాబ్"). Case suffixes (లను/లు) are
+     * dropped — Twinglish keeps the bare English noun; postpositions (లో/కి)
+     * are kept as separate Telugu words ("labs lo", "office ki").
+     */
+    private val loanwords = listOf(
+        "ల్యాబ్\u200Cలను" to "labs",
+        "ల్యాబ్లను" to "labs",
+        "ల్యాబ్\u200Cలు" to "labs",
+        "ల్యాబ్లు" to "labs",
+        "ల్యాబ్\u200Cలో" to "labs lo",
+        "ల్యాబ్లో" to "labs lo",
+        "ల్యాబ్" to "labs",
+        "అప్\u200Cడేట్" to "update",
+        "అప్డేట్" to "update",
+        "కంటెంట్" to "content",
+        "వీడియోతో" to "video to",
+        "వీడియోలో" to "video lo",
+        "వీడియోకి" to "video ki",
+        "వీడియోలు" to "videos",
+        "వీడియో" to "video",
+        "ప్రయత్నించండి" to "try cheyandi",
+        "ప్రయత్నించు" to "try chey",
+        "ఆఫీస్\u200Cకి" to "office ki",
+        "ఆఫీస్కి" to "office ki",
+        "ఆఫీస్\u200Cలో" to "office lo",
+        "ఆఫీస్లో" to "office lo",
+        "ఆఫీస్" to "office",
+        "మీటింగ్\u200Cకి" to "meeting ki",
+        "మీటింగ్" to "meeting",
+        "కాల్" to "call",
+        "లంచ్" to "lunch",
+        "ఫోన్" to "phone",
+        "మెసేజ్" to "message",
+        "టైమ్" to "time",
+        "పార్టీ" to "party",
+        "ప్రాబ్లెమ్" to "problem",
+        "ప్రాబ్లం" to "problem",
+        "ఇంటర్నెట్" to "internet",
+        "వీకెండ్" to "weekend",
+        "బ్యాటరీ" to "battery",
+        "టీమ్" to "team",
+        "ప్రాజెక్ట్" to "project",
+        "రిపోర్ట్" to "report",
+        "మెయిల్" to "mail",
+        "టికెట్" to "ticket",
+        "బస్" to "bus",
+        "ట్రైన్" to "train",
+        "బ్యాంక్" to "bank",
+        "షాప్" to "shop",
+        "ఎగ్జామ్" to "exam",
+        "క్లాస్" to "class",
+        "టీచర్" to "teacher",
+        "హాస్పిటల్" to "hospital",
+        "డాక్టర్" to "doctor",
+        "గేమ్" to "game",
+        "డాన్స్" to "dance",
+        "బర్త్డే" to "birthday",
+        "గిఫ్ట్" to "gift",
+        "ఫోటో" to "photo",
+        "పిక్చర్" to "picture",
+        "వాట్సాప్" to "WhatsApp",
+    )
+
+    /**
+     * Google's Telugu output needs two cleanup passes for every style:
+     *
+     *   1. Code-switched English words Google transliterated into Telugu
+     *      script are restored to the English word Twinglish chat uses
+     *      ("ల్యాబ్\u200cలను" → "labs", "అప్\u200cడేట్" → "update").
+     *   2. Zero-width characters are converted away — a non-joiner (\u200C)
+     *      marks a syllable boundary (ల్యాబ్\u200cలను) so it becomes a
+     *      space; joiners/spaces (\u200D/\u200B) are dropped. Without this
+     *      they leak straight into the romanized output as invisible garbage
+     *      ("lyab\u200clanu ap\u200cdet …").
+     */
+    private fun cleanTelugu(telugu: String): String {
+        var out = telugu
+        for ((te, en) in loanwords) out = out.replace(te, en)
+        out = out.replace("\u200C", " ").replace("\u200D", "").replace("\u200B", "")
         return out.trim().replace(Regex("\\s{2,}"), " ")
     }
 }

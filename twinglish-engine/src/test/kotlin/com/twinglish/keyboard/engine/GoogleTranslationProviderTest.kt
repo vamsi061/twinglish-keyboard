@@ -405,6 +405,84 @@ class GoogleTranslationProviderTest {
         assertFalse(TranslationSanitizer.hasGarbage("nenu English ni automatic ga Twinglish ga marche"))
     }
 
+    // ------------------------------------------------------------------
+    // zero-width joiners + code-switched English loanwords
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `reported sentence keeps loanwords english and never leaks zero width chars`() = runBlocking {
+        // Real gtx output for "sometimes they will update the labs, so if the
+        // lab content didnt matched then, try with another video": Google
+        // transliterates labs/update/content/video into Telugu script and
+        // inserts ZWNJ (\u200c) around the viramas, which previously leaked
+        // into the romanized output as "lyab\u200clanu ap\u200cdet …".
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = {
+                "కొన్నిసార్లు వారు ల్యాబ్\u200Cలను అప్\u200Cడేట్ చేస్తారు, " +
+                    "కనుక ల్యాబ్ కంటెంట్ సరిపోలకపోతే, మరోక వీడియోతో ప్రయత్నించండి"
+            },
+        )
+
+        val result = provider.translateEnglishToTelugu(
+            "sometimes they will update the labs, so if the lab content didnt matched then, try with another video",
+            TranslationStyle.CASUAL,
+        )
+        val out = result!!.twinglish
+        // No zero-width characters anywhere in the romanized output.
+        assertFalse(out.contains('\u200C'))
+        assertFalse(out.contains('\u200D'))
+        assertFalse(out.contains('\u200B'))
+        // Code-switched English words stay English…
+        assertTrue(out.contains("labs"))
+        assertTrue(out.contains("update"))
+        assertTrue(out.contains("content"))
+        assertTrue(out.contains("video"))
+        assertTrue(out.contains("try cheyandi"))
+        // …and the whole sentence is natural Twinglish, not a mangled
+        // transliteration.
+        assertEquals(
+            "konnisarlu vaaru labs update chestaru, kanuka labs content saripolakapote, maroka video to try cheyandi",
+            out,
+        )
+    }
+
+    @Test
+    fun `loanword cleanup applies to polite and formal styles too`() = runBlocking {
+        // The bug was that ZWNJ/loanword cleanup only ran for CASUAL — the
+        // polite/formal candidates leaked "lyab\u200clanu"-style garbage.
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "మీటింగ్\u200Cకి వెళ్తున్నాను, ఫోన్\u200Cలో మాట్లాడుదాం" },
+        )
+
+        for (style in listOf(TranslationStyle.POLITE, TranslationStyle.FORMAL)) {
+            val out = provider
+                .translateEnglishToTelugu("i am going to the meeting, let us talk on the phone", style)!!
+                .twinglish
+            assertTrue("loanwords must stay english in $style: $out", out.contains("meeting"))
+            assertTrue(out.contains("phone"))
+            assertFalse(out.contains('\u200C'))
+        }
+    }
+
+    @Test
+    fun `romanizer never emits zero-width characters`() {
+        // Even if Telugu with embedded joiners reaches the romanizer from
+        // another path, the output must be clean.
+        assertEquals("lyab lanu", Romanizer.romanize("ల్యాబ్\u200Cలను"))
+        assertEquals("nuvvu em chestunnav", Romanizer.romanize("నువ్వు ఏం చేస్తున్నావు\u200D"))
+    }
+
+    @Test
+    fun `sanitizer strips zero-width characters from persisted entries`() {
+        // Old on-device cache entries can carry ZWNJ inside romanized text.
+        assertEquals("lyab lanu", TranslationSanitizer.clean("lyab\u200Clanu"))
+        assertEquals("sinima ela undi", TranslationSanitizer.clean("sinima ela undi\u200D"))
+    }
+
     @Test
     fun `real phrase bank sentences translate without touching the network`() = runBlocking {
         var fetches = 0

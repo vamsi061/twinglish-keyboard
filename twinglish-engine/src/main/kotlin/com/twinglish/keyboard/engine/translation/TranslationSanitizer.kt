@@ -25,6 +25,13 @@ object TranslationSanitizer {
     // Google model file names, e.g. tea_DravidianA_en2knmlsitate_2021q3.md
     private val MODEL_FILE = Regex("tea_[A-Za-z0-9_.\\-]+\\.md")
 
+    // Zero-width format characters (ZWNJ \u200c, ZWJ \u200d, ZWSP \u200b, …)
+    // that Google embeds in Telugu script. They must never surface in
+    // romanized text — persisted entries from older builds can carry them.
+    // A non-joiner marks a syllable boundary so it becomes a space
+    // (matching the provider + romanizer); the rest are dropped.
+    private val ZERO_WIDTH = Regex("[\\u200B\\u200D\\u2060\\uFEFF]")
+
     /** True when [text] contains any known Google metadata token. */
     fun hasGarbage(text: String): Boolean =
         HASH.containsMatchIn(text) || MODEL_FILE.containsMatchIn(text)
@@ -38,6 +45,7 @@ object TranslationSanitizer {
     fun clean(text: String): String {
         if (text.isBlank()) return text
         var out = text.replace(HASH, "").replace(MODEL_FILE, "")
+        out = out.replace("\u200C", " ").replace(ZERO_WIDTH, "")
         out = out.replace(Regex("\\s{2,}"), " ").trim()
         return out
     }
