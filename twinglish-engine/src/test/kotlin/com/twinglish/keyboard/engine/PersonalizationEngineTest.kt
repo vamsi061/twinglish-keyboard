@@ -105,6 +105,23 @@ class PersonalizationEngineTest {
     }
 
     @Test
+    fun `punctuation variants share one cache entry and skip the provider`() = runBlocking {
+        val (personal, counting, _) = setup()
+        // First request (with "?"): generated and cached under the
+        // punctuation-insensitive key.
+        val first = personal.translateAndRank("how are you?", TranslationStyle.CASUAL, RomanizationStyle.CASUAL)
+        assertTrue(first != null && !first.cacheHit)
+        assertEquals(3, counting.calls.size)
+
+        // Same sentence without punctuation: served from the local cache —
+        // the provider (and therefore the network) is never touched again.
+        val second = personal.translateAndRank("How are you", TranslationStyle.CASUAL, RomanizationStyle.CASUAL)
+        assertTrue(second != null && second.cacheHit)
+        assertEquals("ela unnav?", second!!.candidates.first().text)
+        assertEquals(3, counting.calls.size) // no new provider calls
+    }
+
+    @Test
     fun `cache key normalization folds case and whitespace`() = runBlocking {
         val (personal, counting, _) = setup()
         personal.translateAndRank("How   are YOU?", TranslationStyle.CASUAL, RomanizationStyle.CASUAL)

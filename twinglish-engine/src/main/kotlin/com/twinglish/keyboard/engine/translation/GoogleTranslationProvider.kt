@@ -67,9 +67,14 @@ class GoogleTranslationProvider(
                 "Translation unavailable — enable Online translation in Settings",
             )
         }
+        // The fetch cache is keyed on the punctuation-insensitive form so
+        // "how are you" / "how are you?" / "how are you!" share ONE Google
+        // call — once a sentence is translated it never hits the network
+        // again for a punctuation variant (Google rate-limit friendly).
+        val key = fetchKey(trimmed)
         val telugu = try {
             withContext(Dispatchers.IO) {
-                fetchCache.getOrPut(normalized) { fetcher(normalized) }
+                fetchCache.getOrPut(key) { fetcher(key) }
             }
         } catch (t: Throwable) {
             null
@@ -244,6 +249,14 @@ class GoogleTranslationProvider(
     private fun normalize(text: String): String =
         text.lowercase().trim().replace(Regex("\\s+"), " ")
 
+    /**
+     * Punctuation-insensitive key for the network fetch cache: trailing
+     * sentence punctuation is dropped so punctuation variants share one
+     * cached Google response. Question detection still uses [normalize]
+     * (punctuation preserved) so "you coming?"-style inputs keep their "?".
+     */
+    private fun fetchKey(text: String): String =
+        normalize(text).trimEnd('.', '!', '?', ',', ';', ':', '\u2026').trim()
     /** Question openers — how/what/where/when/why/who/which/do/did/are/… */
     private val questionStarters = listOf(
         "how", "what", "where", "when", "why", "who", "whom", "whose",

@@ -191,6 +191,26 @@ class GoogleTranslationProviderTest {
     // ------------------------------------------------------------------
 
     @Test
+    fun `punctuation variants share a single google fetch`() = runBlocking {
+        var fetches = 0
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = {
+                fetches++
+                "నేను మార్కెట్ కి వెళ్తున్నాను"
+            },
+        )
+
+        // Same sentence, three punctuation variants — one network call total
+        // (this is what keeps Google rate limits at bay on repeated typing).
+        provider.translateEnglishToTelugu("i am going to the market?", TranslationStyle.CASUAL)
+        provider.translateEnglishToTelugu("i am going to the market", TranslationStyle.CASUAL)
+        provider.translateEnglishToTelugu("I AM GOING TO THE MARKET!", TranslationStyle.CASUAL)
+        assertEquals(1, fetches)
+    }
+
+    @Test
     fun `normalized duplicates share a single google fetch`() = runBlocking {
         var fetches = 0
         val provider = GoogleTranslationProvider(
