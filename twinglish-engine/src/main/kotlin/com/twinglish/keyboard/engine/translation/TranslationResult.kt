@@ -15,4 +15,11 @@ data class TranslationResult(
     val twinglish: String,
     val confidence: Float,
     val style: TranslationStyle,
+    /**
+     * Set when the provider could NOT produce a confident translation.
+     * [twinglish] then holds the original English text (a safe fallback —
+     * never a partial hybrid) and [error] explains why, so the UI can show
+     * the reason instead of silently failing. Null means success.
+     */
+    val error: String? = null,
 )

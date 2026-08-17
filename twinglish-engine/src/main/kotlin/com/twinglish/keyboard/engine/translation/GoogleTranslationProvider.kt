@@ -58,10 +58,31 @@ class GoogleTranslationProvider(
         }
 
         // 2. Google Translate for sentences the phrase bank can't handle.
-        if (!onlineEnabled()) return offlineResult
-        val telugu = withContext(Dispatchers.IO) {
-            fetchCache.getOrPut(normalized) { fetcher(normalized) }
-        } ?: return offlineResult
+        if (!onlineEnabled()) {
+            // Phrase bank missed AND online translation is off. Never return
+            // silence: keep the original English and explain why, so the UI
+            // can show the reason behind the suggestion.
+            return offlineResult ?: failed(
+                trimmed, style,
+                "Translation unavailable — enable Online translation in Settings",
+            )
+        }
+        val telugu = try {
+            withContext(Dispatchers.IO) {
+                fetchCache.getOrPut(normalized) { fetcher(normalized) }
+            }
+        } catch (t: Throwable) {
+            null
+        }
+        if (telugu == null) {
+            // Network / timeout / parse failure — surface it instead of
+            // returning nothing. A weak offline template is still a real
+            // translation, so it wins over the error.
+            return offlineResult ?: failed(
+                trimmed, style,
+                "Translation failed — check your connection",
+            )
+        }
 
         val styled = if (style == TranslationStyle.CASUAL) casualize(telugu) else telugu
         // Interrogative sentences keep their "?" even when the user typed
@@ -78,6 +99,22 @@ class GoogleTranslationProvider(
 
     override fun romanizeTelugu(teluguText: String, style: RomanizationStyle): String =
         Romanizer.romanize(teluguText, style)
+
+    /**
+     * A non-translation fallback: [twinglish] keeps the user's own English
+     * text (never a partial hybrid) and [error] carries the reason. The
+     * confidence is 0 so callers can distinguish fallbacks from real output
+     * and never cache or rank them above a genuine translation.
+     */
+    private fun failed(text: String, style: TranslationStyle, reason: String): TranslationResult =
+        TranslationResult(
+            input = text,
+            telugu = null,
+            twinglish = text,
+            confidence = 0f,
+            style = style,
+            error = reason,
+        )
 
     // ------------------------------------------------------------------
     // Google Translate (keyless endpoint)

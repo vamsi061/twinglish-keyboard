@@ -126,6 +126,16 @@ class TwinglishInputMethodService : android.inputmethodservice.InputMethodServic
             controller.state.collectLatest { state ->
                 if (translationAllowed && ::strip.isInitialized) {
                     val list = mutableListOf<SuggestionStripView.Suggestion>()
+                    // Translation failed for this sentence: show the reason
+                    // (e.g. no network) behind the English fallback so the
+                    // user knows why there's no Twinglish suggestion.
+                    state.error?.let {
+                        list += SuggestionStripView.Suggestion(
+                            text = "⚠ $it",
+                            source = "error",
+                            isError = true,
+                        )
+                    }
                     state.primary?.let {
                         list += SuggestionStripView.Suggestion(text = it, primary = true, source = "twinglish")
                     }

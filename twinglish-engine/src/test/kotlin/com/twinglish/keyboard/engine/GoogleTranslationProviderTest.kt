@@ -135,7 +135,7 @@ class GoogleTranslationProviderTest {
     }
 
     @Test
-    fun `offline miss with online disabled keeps the offline result`() = runBlocking {
+    fun `offline miss with online disabled reports an error and keeps the english`() = runBlocking {
         var fetches = 0
         val offline = FakeOffline(null)
         val provider = GoogleTranslationProvider(
@@ -147,8 +147,30 @@ class GoogleTranslationProviderTest {
             },
         )
 
-        assertNull(provider.translateEnglishToTelugu("some sentence the bank misses", TranslationStyle.CASUAL))
+        val result = provider.translateEnglishToTelugu("some sentence the bank misses", TranslationStyle.CASUAL)
+        assertTrue(result != null)
+        // Original English kept as a safe fallback — never a partial hybrid…
+        assertEquals("some sentence the bank misses", result!!.twinglish)
+        // …and the reason is carried so the UI can show it.
+        assertTrue(result.error != null)
+        assertEquals(0f, result.confidence)
         assertEquals(0, fetches)
+    }
+
+    @Test
+    fun `offline miss with a google network failure reports an error`() = runBlocking {
+        val offline = FakeOffline(null)
+        val provider = GoogleTranslationProvider(
+            offline = offline,
+            onlineEnabled = { true },
+            fetcher = { null }, // network failure
+        )
+
+        val result = provider.translateEnglishToTelugu("how is the movie today", TranslationStyle.CASUAL)
+        assertTrue(result != null)
+        assertEquals("how is the movie today", result!!.twinglish) // English fallback
+        assertTrue(result.error != null)
+        assertEquals(0f, result.confidence)
     }
 
     @Test

@@ -39,7 +39,20 @@ class TwinglishEngine(
         if (trimmed.isBlank()) return null
         val key = "$style|$romanStyle|$trimmed"
         cache[key]?.let { return it }
-        val result = contextual.translate(trimmed, style, romanStyle)
+        val result = try {
+            contextual.translate(trimmed, style, romanStyle)
+        } catch (t: Throwable) {
+            // A translation bug must never take the keyboard down or leave
+            // the strip silently empty — surface a safe English fallback.
+            TranslationResult(
+                input = trimmed,
+                telugu = null,
+                twinglish = trimmed,
+                confidence = 0f,
+                style = style,
+                error = "Translation failed",
+            )
+        }
         if (result != null) cache[key] = result
         return result
     }

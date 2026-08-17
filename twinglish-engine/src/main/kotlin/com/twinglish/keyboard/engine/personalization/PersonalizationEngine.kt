@@ -9,6 +9,12 @@ import com.twinglish.keyboard.engine.translation.TranslationStyle
 data class RankedResult(
     val candidates: List<Candidate>,
     val cacheHit: Boolean = false,
+    /**
+     * Set when every candidate style failed (e.g. offline miss + network
+     * down). [candidates] then holds the original English text as a safe
+     * fallback, and this explains why, so the UI can show the reason.
+     */
+    val error: String? = null,
 )
 
 /**
@@ -40,6 +46,18 @@ class PersonalizationEngine(
         input: String,
         style: TranslationStyle,
         romanStyle: RomanizationStyle,
+    ): RankedResult? = try {
+        translateAndRankOrThrow(input, style, romanStyle)
+    } catch (t: Throwable) {
+        // A translation exception must never crash the IME process — report
+        // the failure so the strip can show it instead of going silent.
+        RankedResult(candidates = emptyList(), error = "Translation failed")
+    }
+
+    private suspend fun translateAndRankOrThrow(
+        input: String,
+        style: TranslationStyle,
+        romanStyle: RomanizationStyle,
     ): RankedResult? {
         val norm = InputNormalizer.normalize(input)
         if (norm.isBlank()) return null
@@ -47,6 +65,8 @@ class PersonalizationEngine(
         val ts = System.currentTimeMillis()
 
         // 1. Exact cache hit — user-approved or previously generated.
+        // Only real translations are ever cached (never failures), so hits
+        // can't carry an error.
         store.getCache(norm)?.let { raw ->
             // Defense in depth: never let a polluted entry surface, even if
             // an older build persisted one before the load-time purge.
@@ -68,7 +88,11 @@ class PersonalizationEngine(
         }
 
         // 2. Generate candidates from the local model (never token-by-token).
+        // Errored results are kept aside: they hold the original English as a
+        // safe fallback and are only surfaced when every style failed.
         val candidates = mutableListOf<Candidate>()
+        val fallbacks = mutableListOf<Candidate>()
+        var firstError: String? = null
         val styles = linkedSetOf(style, TranslationStyle.POLITE, TranslationStyle.FORMAL)
         for (s in styles) {
             val result = engine.translate(input, s, romanStyle) ?: continue
@@ -79,11 +103,21 @@ class PersonalizationEngine(
             }
             val cleaned = TranslationSanitizer.clean(text)
             if (cleaned.isBlank()) continue
-            if (candidates.none { it.text == cleaned }) {
-                candidates += Candidate(text = cleaned, quality = result.confidence, style = s)
+            val cand = Candidate(text = cleaned, quality = result.confidence, style = s)
+            if (result.error != null) {
+                if (firstError == null) firstError = result.error
+                if (fallbacks.none { it.text == cleaned }) fallbacks += cand
+            } else if (candidates.none { it.text == cleaned }) {
+                candidates += cand
             }
         }
-        if (candidates.isEmpty()) return null
+
+        // Every style failed → offer the original English and carry the reason.
+        val error = if (candidates.isEmpty()) firstError else null
+        if (candidates.isEmpty()) candidates += fallbacks
+        if (candidates.isEmpty()) {
+            return RankedResult(candidates = emptyList(), error = error ?: "Translation failed")
+        }
 
         // 3. Personalized re-ranking (re-orders candidates only).
         val ranked = if (flags.personalizedSuggestions) {
@@ -93,22 +127,26 @@ class PersonalizationEngine(
         }
 
         // 4. Persist the top candidate (generated — not user-approved yet).
+        // Never cache English fallbacks / failed results — that would poison
+        // the cache with non-translations for the session.
         val top = ranked.first()
-        store.putCache(
-            TranslationCacheEntry(
-                normalizedSource = norm,
-                teluguText = null,
-                twinglishText = top.text,
-                style = top.style.id,
-                createdAt = ts,
-                lastUsedAt = ts,
-                usageCount = 0,
-                confidence = top.quality,
+        if (error == null && top.quality > 0f) {
+            store.putCache(
+                TranslationCacheEntry(
+                    normalizedSource = norm,
+                    teluguText = null,
+                    twinglishText = top.text,
+                    style = top.style.id,
+                    createdAt = ts,
+                    lastUsedAt = ts,
+                    usageCount = 0,
+                    confidence = top.quality,
+                )
             )
-        )
-        store.evictCache(DEFAULT_CACHE_LIMIT)
+            store.evictCache(DEFAULT_CACHE_LIMIT)
+        }
 
-        return RankedResult(candidates = ranked, cacheHit = false)
+        return RankedResult(candidates = ranked, cacheHit = false, error = error)
     }
 
     /** Personal phrase autocomplete for the current word prefix. */

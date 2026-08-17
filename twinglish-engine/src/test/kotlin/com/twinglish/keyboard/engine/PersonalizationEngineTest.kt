@@ -34,6 +34,49 @@ class PersonalizationEngineTest {
             delegate.romanizeTelugu(teluguText, style)
     }
 
+    /** Provider that always fails — used to exercise the error path. */
+    private class FailingProvider : TranslationProvider {
+        override val id: String = "failing"
+        override val isOnline: Boolean = false
+        override suspend fun translateEnglishToTelugu(text: String, style: TranslationStyle): TranslationResult? =
+            TranslationResult(
+                input = text,
+                telugu = null,
+                twinglish = text, // original English — safe fallback
+                confidence = 0f,
+                style = style,
+                error = "Translation failed — check your connection",
+            )
+        override fun romanizeTelugu(teluguText: String, style: RomanizationStyle): String = teluguText
+    }
+
+    // ---- total failure: error surfaced, english fallback, never cached ----
+
+    @Test
+    fun `total failure surfaces an error with english fallback and never caches it`() = runBlocking {
+        val store = LocalKnowledgeStore(path = null)
+        val learning = LearningEngine(store)
+        val personal = PersonalizationEngine(
+            TwinglishEngine(provider = FailingProvider()),
+            store,
+            learning,
+            PersonalizedRanker(),
+        )
+
+        val result = personal.translateAndRank(
+            "how is the movie today",
+            TranslationStyle.CASUAL,
+            RomanizationStyle.CASUAL,
+        )
+        assertTrue(result != null)
+        // Original English offered as a tappable fallback…
+        assertEquals("how is the movie today", result!!.candidates.first().text)
+        // …with the reason carried for the UI to show.
+        assertTrue(result.error != null)
+        // A failure must never poison the cache with a non-translation.
+        assertTrue(store.allCache().isEmpty())
+    }
+
     private fun setup(
         flags: LearningFlags = LearningFlags(),
     ): Triple<PersonalizationEngine, CountingProvider, LocalKnowledgeStore> {

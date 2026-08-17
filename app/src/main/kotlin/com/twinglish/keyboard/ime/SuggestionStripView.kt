@@ -20,7 +20,13 @@ import androidx.recyclerview.widget.RecyclerView
  */
 class SuggestionStripView(context: Context) : FrameLayout(context) {
 
-    data class Suggestion(val text: String, val primary: Boolean = false, val source: String = "")
+    data class Suggestion(
+        val text: String,
+        val primary: Boolean = false,
+        val source: String = "",
+        /** Error notices (e.g. "translation failed") render in hint color and are not tappable. */
+        val isError: Boolean = false,
+    )
 
     var onSuggestionClicked: ((Suggestion) -> Unit)? = null
 
@@ -126,6 +132,15 @@ class SuggestionStripView(context: Context) : FrameLayout(context) {
             val s = items[position]
             val tv = holder.tv
             tv.text = s.text
+            if (s.isError) {
+                // Non-tappable notice: hint color, no pill, no highlight.
+                tv.setTextColor(colors.hint)
+                tv.background = null
+                tv.setPadding(dp(tv, 9), dp(tv, 5), dp(tv, 9), dp(tv, 5))
+                tv.setOnClickListener(null)
+                tv.setOnLongClickListener(null)
+                return
+            }
             tv.setTextColor(colors.suggestionText)
             tv.setTypeface(null, Typeface.NORMAL)
             if (s.primary) {

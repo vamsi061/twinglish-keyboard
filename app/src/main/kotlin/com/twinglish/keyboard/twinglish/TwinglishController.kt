@@ -37,6 +37,12 @@ class TwinglishController(
         val primary: String? = null,
         val alternatives: List<String> = emptyList(),
         val translating: Boolean = false,
+        /**
+         * Set when translation failed for the current sentence (e.g. no
+         * offline rule and the network is down). [primary] then holds the
+         * original English as a safe fallback, and this explains why.
+         */
+        val error: String? = null,
     )
 
     private val _state = MutableStateFlow(State())
@@ -56,7 +62,9 @@ class TwinglishController(
         val trimmed = sentence.trim()
         _state.update { it.copy(sentence = trimmed) }
         if (trimmed.isBlank()) {
-            _state.update { it.copy(primary = null, alternatives = emptyList(), translating = false) }
+            _state.update {
+                it.copy(primary = null, alternatives = emptyList(), translating = false, error = null)
+            }
             return
         }
         val seq = ++sequence
@@ -64,7 +72,13 @@ class TwinglishController(
             delay(DEBOUNCE_MS)
             if (seq != sequence) return@launch
             _state.update { it.copy(translating = true) }
-            val result = personalization.translateAndRank(trimmed, styleProvider(), romanStyleProvider())
+            val result = try {
+                personalization.translateAndRank(trimmed, styleProvider(), romanStyleProvider())
+            } catch (t: Throwable) {
+                // Never let a translation failure escape the coroutine — an
+                // uncaught exception here would kill the whole IME process.
+                null
+            }
             if (seq != sequence) return@launch
             lastSentence = trimmed
             lastRanked = result?.candidates ?: emptyList()
@@ -76,7 +90,12 @@ class TwinglishController(
             shownSuggestion = primary
             shownAt = System.currentTimeMillis()
             _state.update {
-                it.copy(primary = primary, alternatives = alternatives, translating = false)
+                it.copy(
+                    primary = primary,
+                    alternatives = alternatives,
+                    translating = false,
+                    error = result?.error,
+                )
             }
         }
     }
