@@ -107,7 +107,9 @@ object Romanizer {
     )
 
     // Casual chat spellings that differ from mechanical romanization
-    // (కావాలి → "kavali" not "kaavaali"). Keyed on the romanized form.
+    // (కావాలి → "kavali" not "kaavaali"). Keyed on the romanized form
+    // (after the final -avu/-uvu shortening, so keys never carry the
+    // dropped -u).
     private val casualOverrides = mapOf(
         "kaavaali" to "kavali",
         "kaavaala" to "kavala",
@@ -116,11 +118,56 @@ object Romanizer {
         "cheshaav" to "chesav",
         "cheshaaru" to "chesaru",
         "cheshaam" to "chesam",
+        // బాగా family — బాగుంది → bagundi, బాగున్నాను → bagunnanu, …
+        "baaga" to "baga",
+        "baagundi" to "bagundi",
+        "baagunnanu" to "bagunnanu",
+        "baagunnav" to "bagunnav",
+        "baagunnava" to "bagunnava",
+        "baagoledu" to "bagoledu",
+        "baagupadu" to "bagupadu",
+        "baadhaga" to "badhaga",
+        // చాలా → chala
+        "chaala" to "chala",
+        // common chat verb forms (long -aa after a plain consonant)
+        "kontaanu" to "kontanu",
+        "pampaanu" to "pampanu",
+        "marchipoyaanu" to "marchipoyanu",
+        "aaguthaanu" to "aaguthanu",
+        "cherukuntaanu" to "cherukuntanu",
+        "tinudaam" to "tinudam",
+        "tinaalani" to "tinalani",
+        "thaagaalani" to "thaagalani",
+        "cheshaava" to "chesava",
+        "antaaru" to "antaru",
+        // వచ్చి/వచ్చా family — చ్చ is mechanical "chch", chat writes one ch:
+        // వచ్చాను → vachanu, వచ్చావు → vachav, వచ్చింది → vachindi.
+        "vachchanu" to "vachanu",
+        "vachchav" to "vachav",
+        "vachchindi" to "vachindi",
+        "vachchava" to "vachava",
+        "vachcharu" to "vacharu",
+        // సహాయం → sahayam (not sahaayam)
+        "sahaayam" to "sahayam",
+        // అయ్యాను → ayanu (not ayyanu)
+        "ayyanu" to "ayanu",
+        // ఎప్పుడు → epudu (not eppudu)
+        "eppudu" to "epudu",
+        // నా (my) → naa, not the shortened "na" (నాకు already gives naaku)
+        "na" to "naa",
+        // దూరం → dooram (not duram)
+        "duram" to "dooram",
+        // మళ్ళీ → malli (not mallee)
+        "mallee" to "malli",
+        // మరోసారి → marosari (not marosaari)
+        "marosaari" to "marosari",
     )
 
-    // Anusvara assimilates to the following consonant's place of articulation.
+    // Anusvara assimilates to the following consonant's place of articulation
+    // (palatals and dentals → n, labials stay m by default): నుంచి → nunchi.
     private val nasalBefore = setOf(
         '\u0C15', '\u0C16', '\u0C17', '\u0C18', '\u0C19', // క ఖ గ ఘ ఙ
+        '\u0C1A', '\u0C1B', '\u0C1C', '\u0C1D', '\u0C1E', // చ ఛ జ ఝ ఞ
         '\u0C1F', '\u0C20', '\u0C21', '\u0C22', '\u0C23', // ట ఠ డ ఢ ణ
         '\u0C24', '\u0C25', '\u0C26', '\u0C27', '\u0C28', // త థ ద ధ న
         '\u0C2F', '\u0C30', '\u0C31', '\u0C32', '\u0C33', // య ర ఱ ల ళ

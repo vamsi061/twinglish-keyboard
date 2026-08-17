@@ -34,6 +34,27 @@ class OfflineTranslationProvider : TranslationProvider {
     // untouched. Question rules carry their own trailing "?"; the
     // ContextualTranslator dedupes it against user-typed punctuation.
     private val rules: List<Rule> = listOf(
+        // ---- specific rules that must beat the generic slot rules below
+        //      ("how is (.+)", "i want (.+)", "which (.+) do you want",
+        //      "where is (.+)") — order matters: first match wins ----
+        Rule(Regex("^how is your day going$"), "నీ రోజు ఎలా ఉంది?"),
+        Rule(Regex("^how is your day$"), "నీ రోజు ఎలా ఉంది?"),
+        Rule(Regex("^how is your family$"), "నీ కుటుంబం ఎలా ఉంది?"),
+        Rule(Regex("^how is everyone$"), "అందరూ ఎలా ఉన్నారు?"),
+        Rule(Regex("^how is the weather$"), "weather ఎలా ఉంది?"),
+        Rule(Regex("^which one do you want$"), "నీకు ఏది కావాలి?"),
+        Rule(Regex("^which one$"), "ఏది?"),
+        Rule(Regex("^i want to eat$"), "నాకు తినాలని ఉంది"),
+        Rule(Regex("^i want to drink$"), "నాకు తాగాలని ఉంది"),
+        Rule(Regex("^i like it$"), "నాకు ఇష్టం"),
+        Rule(Regex("^where is the bathroom$"), "bathroom ఎక్కడ?"),
+        Rule(Regex("^where is the toilet$"), "toilet ఎక్కడ?"),
+        Rule(Regex("^where is the restaurant$"), "restaurant ఎక్కడ?"),
+        Rule(Regex("^where is the bus stop$"), "bus stop ఎక్కడ?"),
+        Rule(Regex("^where is the station$"), "station ఎక్కడ?"),
+        Rule(Regex("^i am in a meeting$"), "నేను meeting లో ఉన్నా"),
+        Rule(Regex("^i am in the bus$"), "నేను bus లో ఉన్నా"),
+
         // ---- what … ----
         Rule(Regex("^what are you doing today$"), "ఏం చేస్తున్నావు ఇవాళ?"),
         Rule(Regex("^what are you doing now$"), "ఏం చేస్తున్నావు ఇప్పుడు?"),
@@ -124,9 +145,9 @@ class OfflineTranslationProvider : TranslationProvider {
         Rule(Regex("^i love you$"), "నేను నిన్ను ప్రేమిస్తున్నాను"),
         Rule(Regex("^i miss you$"), "నీ కోసం miss అవుతున్నాను"),
         Rule(Regex("^i know$"), "నాకు తెలుసు"),
-        Rule(Regex("^i don't know$"), "నాకు తెలియదు"),
-        Rule(Regex("^i don't understand$"), "నాకు అర్థం కాలేదు"),
-        Rule(Regex("^i don't want$"), "నాకు వద్దు"),
+        Rule(Regex("^i do not know$"), "నాకు తెలియదు"),
+        Rule(Regex("^i do not understand$"), "నాకు అర్థం కాలేదు"),
+        Rule(Regex("^i do not want$"), "నాకు వద్దు"),
         Rule(Regex("^i want water$"), "నాకు నీళ్ళు కావాలి"),
         Rule(Regex("^i want (a )?coffee$"), "నాకు coffee కావాలి"),
         Rule(Regex("^i want (a )?tea$"), "నాకు tea కావాలి"),
@@ -144,7 +165,7 @@ class OfflineTranslationProvider : TranslationProvider {
         Rule(Regex("^go away$"), "వెళ్ళిపో"),
         Rule(Regex("^wait$"), "ఆగు"),
         Rule(Regex("^wait (a moment|for me)$"), "కాసేపు ఆగు"),
-        Rule(Regex("^let's go$"), "వెళ్దాం"),
+        Rule(Regex("^let us go$"), "వెళ్దాం"),
         Rule(Regex("^no problem$"), "పర్వాలేదు"),
         Rule(Regex("^it is okay$"), "పర్వాలేదు"),
         Rule(Regex("^never mind$"), "పర్వాలేదు"),
@@ -160,6 +181,242 @@ class OfflineTranslationProvider : TranslationProvider {
         Rule(Regex("^sorry$"), "సారీ"),
         Rule(Regex("^yes$"), "ఔను"),
         Rule(Regex("^no$"), "కాదు"),
+
+        // ---- greetings / small talk ----
+        Rule(Regex("^good afternoon$"), "శుభ మధ్యాహ్నం"),
+        Rule(Regex("^good evening$"), "శుభ సాయంత్రం"),
+        Rule(Regex("^good day$"), "శుభ దినం"),
+        Rule(Regex("^bye$"), "bye"),
+        Rule(Regex("^see you$"), "కలుద్దాం"),
+        Rule(Regex("^welcome$"), "స్వాగతం"),
+        Rule(Regex("^how have you been$"), "ఇన్నాళ్ళు ఎలా ఉన్నావు?"),
+        Rule(Regex("^how was your day$"), "నీ రోజు ఎలా ఉంది?"),
+        Rule(Regex("^how do you do$"), "ఎలా ఉన్నావు?"),
+        Rule(Regex("^whats up$"), "ఏముంది?"),
+        Rule(Regex("^what is up$"), "ఏముంది?"),
+        Rule(Regex("^what is going on$"), "ఏం జరుగుతోంది?"),
+        Rule(Regex("^nice to meet you$"), "నిన్ను కలవడం సంతోషం"),
+        Rule(Regex("^long time no see$"), "చాలా రోజులైంది కదా"),
+        Rule(Regex("^ok bye$"), "సరే bye"),
+
+        // ---- introductions / personal ----
+        Rule(Regex("^i am from (.+)$"), "నేను \$1 నుంచి వచ్చాను", 0.8f),
+        Rule(Regex("^where are you from$"), "నువ్వు ఎక్కడ నుంచి వచ్చావు?"),
+        Rule(Regex("^i am studying$"), "నేను చదువుతున్నాను"),
+        Rule(Regex("^i am working$"), "నేను పని చేస్తున్నాను"),
+        Rule(Regex("^i am a student$"), "నేను student ని"),
+        Rule(Regex("^i am a teacher$"), "నేను teacher ని"),
+        Rule(Regex("^i am a doctor$"), "నేను doctor ని"),
+        Rule(Regex("^i am married$"), "నాకు పెళ్లయింది"),
+        Rule(Regex("^i am single$"), "నేను single ని"),
+        Rule(Regex("^i have a brother$"), "నాకు ఒక brother ఉన్నాడు"),
+        Rule(Regex("^i have a sister$"), "నాకు ఒక sister ఉంది"),
+        Rule(Regex("^do you have a brother$"), "నీకు brother ఉన్నాడా?"),
+        Rule(Regex("^do you have a sister$"), "నీకు sister ఉందా?"),
+        Rule(Regex("^how old are you$"), "నీ వయసు ఎంత?"),
+
+        // ---- food / eating ----
+        Rule(Regex("^i ate$"), "నేను తిన్నాను"),
+        Rule(Regex("^i have eaten$"), "నేను తిన్నాను"),
+        Rule(Regex("^i have not eaten$"), "నేను తినలేదు"),
+        Rule(Regex("^i had breakfast$"), "నేను breakfast చేశాను"),
+        Rule(Regex("^i had lunch$"), "నేను lunch చేశాను"),
+        Rule(Regex("^i had dinner$"), "నేను dinner చేశాను"),
+        Rule(Regex("^let us eat$"), "తినుదాం"),
+        Rule(Regex("^let us have lunch$"), "lunch చేద్దాం"),
+        Rule(Regex("^let us have dinner$"), "dinner చేద్దాం"),
+        Rule(Regex("^what is for lunch$"), "lunch ఏంటి?"),
+        Rule(Regex("^what is for dinner$"), "dinner ఏంటి?"),
+        Rule(Regex("^the food is tasty$"), "food బాగుంది"),
+        Rule(Regex("^this food is tasty$"), "ఈ food చాలా బాగుంది"),
+        Rule(Regex("^i am full$"), "నాకు కడుపు నిండింది"),
+
+        // ---- time / plans ----
+        Rule(Regex("^what time is it$"), "ఇప్పుడు ఎంత సమయం?"),
+        Rule(Regex("^what time$"), "ఎంత సమయం?"),
+        Rule(Regex("^are you free now$"), "ఇప్పుడు నువ్వు ఖాళీగా ఉన్నావా?"),
+        Rule(Regex("^are you busy$"), "నువ్వు busy గా ఉన్నావా?"),
+        Rule(Regex("^i am free$"), "నేను ఖాళీగా ఉన్నా"),
+        Rule(Regex("^i am free now$"), "నేను ఇప్పుడు ఖాళీగా ఉన్నా"),
+        Rule(Regex("^i have time$"), "నాకు సమయం ఉంది"),
+        Rule(Regex("^i do not have time$"), "నాకు సమయం లేదు"),
+        Rule(Regex("^i am late$"), "నేను late అయ్యాను"),
+        Rule(Regex("^i will be late$"), "నేను late అవుతాను"),
+        Rule(Regex("^i will reach by (.+)$"), "నేను \$1 లోపల చేరుకుంటాను", 0.8f),
+        Rule(Regex("^when will you be free$"), "నీకు ఎప్పుడు time ఉంటుంది?"),
+        Rule(Regex("^i am going to office$"), "నేను office కి వెళ్తున్నాను"),
+        Rule(Regex("^are you going to office$"), "నువ్వు office కి వెళ్తున్నావా?"),
+
+        // ---- travel / location ----
+        Rule(Regex("^are you going to (.+)$"), "నువ్వు \$1 కి వెళ్తున్నావా?", 0.8f),
+        Rule(Regex("^i am coming to (.+)$"), "నేను \$1 కి వస్తున్నాను", 0.8f),
+        Rule(Regex("^where are you now$"), "నువ్వు ఇప్పుడు ఎక్కడ ఉన్నావు?"),
+        Rule(Regex("^i am on the bus$"), "నేను bus లో ఉన్నా"),
+        Rule(Regex("^i missed the bus$"), "నాకు bus miss అయింది"),
+        Rule(Regex("^how do i go to (.+)$"), "నేను \$1 కి ఎలా వెళ్లాలి?", 0.8f),
+        Rule(Regex("^let us go to (.+)$"), "\$1 కి వెళ్దాం", 0.8f),
+        Rule(Regex("^shall we go$"), "వెళ్దాం?"),
+        Rule(Regex("^shall we go to (.+)$"), "\$1 కి వెళ్దాం?", 0.8f),
+        Rule(Regex("^i reached home$"), "నేను ఇంటికి చేరుకున్నాను"),
+        Rule(Regex("^i reached$"), "నేను చేరుకున్నాను"),
+        Rule(Regex("^i am home$"), "నేను ఇంట్లో ఉన్నా"),
+        Rule(Regex("^are you home$"), "నువ్వు ఇంట్లో ఉన్నావా?"),
+        Rule(Regex("^i am outside$"), "నేను బయట ఉన్నా"),
+        Rule(Regex("^i am inside$"), "నేను లోపల ఉన్నా"),
+        Rule(Regex("^come inside$"), "లోపలికి రా"),
+        Rule(Regex("^come fast$"), "త్వరగా రా"),
+        Rule(Regex("^hurry up$"), "త్వరగా రా"),
+        Rule(Regex("^slow down$"), "నెమ్మదిగా వెళ్ళు"),
+        Rule(Regex("^turn right$"), "కుడి వైపు వెళ్ళు"),
+        Rule(Regex("^turn left$"), "ఎడమ వైపు వెళ్ళు"),
+        Rule(Regex("^go straight$"), "నేరుగా వెళ్ళు"),
+        Rule(Regex("^i am lost$"), "నేను దారి తప్పాను"),
+
+        // ---- shopping / money ----
+        Rule(Regex("^how much does it cost$"), "దీని ధర ఎంత?"),
+        Rule(Regex("^it is expensive$"), "దీని ధర చాలా ఎక్కువ"),
+        Rule(Regex("^it is cheap$"), "దీని ధర తక్కువ"),
+        Rule(Regex("^i will buy this$"), "నేను దీన్ని కొంటాను"),
+        Rule(Regex("^do you have money$"), "నీ దగ్గర డబ్బు ఉందా?"),
+        Rule(Regex("^i have money$"), "నా దగ్గర డబ్బు ఉంది"),
+        Rule(Regex("^i do not have money$"), "నా దగ్గర డబ్బు లేదు"),
+
+        // ---- work / study ----
+        Rule(Regex("^i am at work$"), "నేను పని మీద ఉన్నా"),
+        Rule(Regex("^i have a meeting$"), "నాకు meeting ఉంది"),
+        Rule(Regex("^i am busy with work$"), "నేను పనిలో busy గా ఉన్నా"),
+        Rule(Regex("^when is the meeting$"), "meeting ఎప్పుడు?"),
+        Rule(Regex("^how was work$"), "పని ఎలా ఉంది?"),
+        Rule(Regex("^how is work$"), "పని ఎలా ఉంది?"),
+        Rule(Regex("^i have homework$"), "నాకు homework ఉంది"),
+        Rule(Regex("^i have an exam$"), "నాకు exam ఉంది"),
+        Rule(Regex("^how was the exam$"), "exam ఎలా ఉంది?"),
+        Rule(Regex("^did you finish your work$"), "నీ పని అయిపోయిందా?"),
+        Rule(Regex("^i finished my work$"), "నా పని అయిపోయింది"),
+
+        // ---- feelings / health ----
+        Rule(Regex("^how are you feeling$"), "నీకు ఎలా అనిపిస్తోంది?"),
+        Rule(Regex("^i am happy$"), "నేను సంతోషంగా ఉన్నా"),
+        Rule(Regex("^i am sad$"), "నేను బాధగా ఉన్నా"),
+        Rule(Regex("^i am not fine$"), "నేను బాగా లేను"),
+        Rule(Regex("^i am not feeling well$"), "నాకు బాగా లేదు"),
+        Rule(Regex("^i am sick$"), "నాకు జబ్బు చేసింది"),
+        Rule(Regex("^i have a cold$"), "నాకు జలుబు చేసింది"),
+        Rule(Regex("^i have a fever$"), "నాకు జ్వరం వచ్చింది"),
+        Rule(Regex("^i have a headache$"), "నాకు తల నొప్పి వస్తోంది"),
+        Rule(Regex("^i am sleepy$"), "నాకు నిద్ర వస్తోంది"),
+        Rule(Regex("^get well soon$"), "త్వరగా బాగుపడు"),
+
+        // ---- phone / communication ----
+        Rule(Regex("^i called you$"), "నేను నీకు call చేశాను"),
+        Rule(Regex("^did you call me$"), "నాకు call చేశావా?"),
+        Rule(Regex("^i missed your call$"), "నీ call miss అయింది"),
+        Rule(Regex("^i am calling you$"), "నేను నీకు call చేస్తున్నా"),
+        Rule(Regex("^message me$"), "నాకు message పంపు"),
+        Rule(Regex("^text me$"), "నాకు text చెయ్యి"),
+        Rule(Regex("^i sent you a message$"), "నీకు message పంపాను"),
+        Rule(Regex("^did you get my message$"), "నా message వచ్చిందా?"),
+        Rule(Regex("^are you on whatsapp$"), "నువ్వు whatsapp లో ఉన్నావా?"),
+        Rule(Regex("^i am on whatsapp$"), "నేను whatsapp లో ఉన్నా"),
+        Rule(Regex("^send me the photo$"), "నాకు photo పంపు"),
+        Rule(Regex("^send me the details$"), "నాకు details పంపు"),
+
+        // ---- opinions / agreement ----
+        Rule(Regex("^i think so$"), "నాకు అలా అనిపిస్తుంది"),
+        Rule(Regex("^i agree$"), "నేను agree అవుతున్నా"),
+        Rule(Regex("^i love it$"), "నాకు చాలా ఇష్టం"),
+        Rule(Regex("^i do not like it$"), "నాకు ఇష్టం లేదు"),
+        Rule(Regex("^that is good$"), "అది బాగుంది"),
+        Rule(Regex("^that is nice$"), "అది బాగుంది"),
+        Rule(Regex("^that is bad$"), "అది బాగా లేదు"),
+        Rule(Regex("^it is good$"), "బాగుంది"),
+        Rule(Regex("^it is fine$"), "పర్వాలేదు"),
+        Rule(Regex("^sounds good$"), "బాగుంది"),
+        Rule(Regex("^sounds great$"), "చాలా బాగుంది"),
+        Rule(Regex("^i understand$"), "నాకు అర్థమైంది"),
+        Rule(Regex("^i understood$"), "నాకు అర్థమైంది"),
+        Rule(Regex("^got it$"), "అర్థమైంది"),
+        Rule(Regex("^right$"), "నిజమే"),
+        Rule(Regex("^exactly$"), "నిజంగా"),
+        Rule(Regex("^maybe$"), "బహుశా"),
+        Rule(Regex("^of course$"), "తప్పకుండా"),
+        Rule(Regex("^sure$"), "తప్పకుండా"),
+        Rule(Regex("^i will try$"), "నేను try చేస్తా"),
+
+        // ---- requests / help ----
+        Rule(Regex("^help me$"), "నాకు సహాయం చెయ్యి"),
+        Rule(Regex("^i need help$"), "నాకు సహాయం కావాలి"),
+        Rule(Regex("^i need (.+)$"), "నాకు \$1 కావాలి", 0.8f),
+        Rule(Regex("^do you need (.+)$"), "నీకు \$1 కావాలా?", 0.8f),
+        Rule(Regex("^please call me$"), "దయచేసి నాకు call చెయ్యి"),
+        Rule(Regex("^please wait$"), "కాసేపు ఆగు"),
+
+        // ---- common questions ----
+        Rule(Regex("^what do you mean$"), "ఏం అంటున్నావు?"),
+        Rule(Regex("^what do you think$"), "నీకు ఏం అనిపిస్తుంది?"),
+        Rule(Regex("^who is this$"), "ఇది ఎవరు?"),
+        Rule(Regex("^who is that$"), "అది ఎవరు?"),
+        Rule(Regex("^whose is this$"), "ఇది ఎవరిది?"),
+        Rule(Regex("^how do you know$"), "నీకు ఎలా తెలుసు?"),
+        Rule(Regex("^how do you say (.+) in telugu$"), "\$1 ని తెలుగులో ఎలా అంటారు?", 0.8f),
+        Rule(Regex("^how long$"), "ఎంత సేపు?"),
+        Rule(Regex("^how far$"), "ఎంత దూరం?"),
+        Rule(Regex("^how many$"), "ఎన్ని?"),
+        Rule(Regex("^how many people$"), "ఎంత మంది?"),
+        Rule(Regex("^how many days$"), "ఎన్ని రోజులు?"),
+        Rule(Regex("^which is better$"), "ఏది బాగుంది?"),
+        Rule(Regex("^is it far$"), "దూరమా?"),
+        Rule(Regex("^is it near$"), "దగ్గరా?"),
+        Rule(Regex("^is it okay$"), "సరేనా?"),
+        Rule(Regex("^is that true$"), "అది నిజమా?"),
+        Rule(Regex("^what did you say$"), "ఏమన్నావు?"),
+        Rule(Regex("^what do you do$"), "నువ్వు ఏం చేస్తావు?"),
+
+        // ---- possession ----
+        Rule(Regex("^i have a car$"), "నాకు car ఉంది"),
+        Rule(Regex("^i have a bike$"), "నాకు bike ఉంది"),
+        Rule(Regex("^i have a phone$"), "నాకు phone ఉంది"),
+        Rule(Regex("^do you have a car$"), "నీకు car ఉందా?"),
+        Rule(Regex("^i do not have a car$"), "నాకు car లేదు"),
+
+        // ---- weather ----
+        Rule(Regex("^it is hot$"), "చాలా వేడిగా ఉంది"),
+        Rule(Regex("^it is cold$"), "చాలా చలిగా ఉంది"),
+        Rule(Regex("^it is raining$"), "వర్షం పడుతోంది"),
+        Rule(Regex("^it is sunny$"), "ఎండగా ఉంది"),
+        Rule(Regex("^is it raining$"), "వర్షం పడుతోందా?"),
+        Rule(Regex("^the weather is nice today$"), "ఈ రోజు weather చాలా బాగుంది"),
+
+        // ---- waiting / listening ----
+        Rule(Regex("^i am waiting for you$"), "నేను నీ కోసం ఆగుతున్నా"),
+        Rule(Regex("^are you waiting$"), "నువ్వు ఆగుతున్నావా?"),
+        Rule(Regex("^where are you waiting$"), "నువ్వు ఎక్కడ ఆగుతున్నావు?"),
+        Rule(Regex("^i am coming now$"), "నేను ఇప్పుడు వస్తున్నా"),
+        Rule(Regex("^wait for me$"), "నా కోసం ఆగు"),
+        Rule(Regex("^i will wait$"), "నేను ఆగుతాను"),
+        Rule(Regex("^are you there$"), "నువ్వు ఉన్నావా?"),
+        Rule(Regex("^are you listening$"), "నువ్వు వింటున్నావా?"),
+        Rule(Regex("^i am listening$"), "నేను వింటున్నా"),
+        Rule(Regex("^can you hear me$"), "నువ్వు నన్ను వింటున్నావా?"),
+        Rule(Regex("^speak slowly$"), "నెమ్మదిగా మాట్లాడు"),
+        Rule(Regex("^please speak slowly$"), "దయచేసి నెమ్మదిగా మాట్లాడండి"),
+        Rule(Regex("^say it again$"), "మళ్ళీ చెప్పు"),
+        Rule(Regex("^one more time$"), "మరోసారి"),
+        Rule(Regex("^can you repeat$"), "మళ్ళీ చెప్పండి"),
+
+        // ---- memory / reassurance ----
+        Rule(Regex("^it is my fault$"), "నా తప్పు"),
+        Rule(Regex("^i forgot$"), "నేను మర్చిపోయాను"),
+        Rule(Regex("^i remember$"), "నాకు గుర్తుంది"),
+        Rule(Regex("^i do not remember$"), "నాకు గుర్తులేదు"),
+        Rule(Regex("^do not worry$"), "చింతించకు"),
+        Rule(Regex("^do not worry about it$"), "దాని గురించి చింతించకు"),
+        Rule(Regex("^it does not matter$"), "పర్వాలేదు"),
+        Rule(Regex("^have fun$"), "enjoy చెయ్యి"),
+        Rule(Regex("^enjoy$"), "enjoy చెయ్యి"),
+        Rule(Regex("^be careful$"), "జాగ్రత్తగా ఉండు"),
+        Rule(Regex("^take rest$"), "rest తీసుకో"),
+        Rule(Regex("^drive safe$"), "జాగ్రత్తగా drive చెయ్యి"),
     )
 
     // Known conversational nouns/words substituted inside rule slots so
@@ -181,6 +438,22 @@ class OfflineTranslationProvider : TranslationProvider {
         "morning" to "ఉదయం", "evening" to "సాయంత్రం", "night" to "రాత్రి",
         "my" to "నా", "your" to "నీ", "his" to "అతని", "her" to "ఆమె",
         "our" to "మన", "this" to "ఇది", "that" to "అది",
+        // Common places / objects — kept English where chat prefers it.
+        "office" to "office", "market" to "మార్కెట్", "shop" to "షాప్",
+        "store" to "షాప్", "bank" to "బ్యాంక్", "hospital" to "hospital",
+        "school" to "school", "college" to "college", "temple" to "గుడి",
+        "church" to "church", "park" to "park", "beach" to "beach",
+        "airport" to "airport", "station" to "station", "mall" to "mall",
+        "hotel" to "hotel", "restaurant" to "restaurant", "cinema" to "సినిమా",
+        "theatre" to "సినిమా", "party" to "party", "meeting" to "meeting",
+        "exam" to "exam", "test" to "test", "homework" to "homework",
+        "lunch" to "lunch", "dinner" to "dinner", "breakfast" to "breakfast",
+        "coffee" to "coffee", "tea" to "tea", "phone" to "phone",
+        "bike" to "bike", "cab" to "cab", "auto" to "auto", "ticket" to "టికెట్",
+        "bill" to "bill", "price" to "ధర", "problem" to "problem",
+        "gift" to "గిఫ్ట్", "friend" to "friend", "brother" to "brother",
+        "sister" to "sister", "mother" to "మమ్మీ", "father" to "నాన్న",
+        "parents" to "parents", "room" to "గది", "key" to "కీ", "bag" to "బ్యాగ్",
     )
 
     // Style transforms: convert casual 2nd-person forms into polite/formal.
@@ -198,9 +471,15 @@ class OfflineTranslationProvider : TranslationProvider {
         "వస్తున్నావు" to "వస్తున్నారు",
         "చూస్తున్నావు" to "చూస్తున్నారు",
         "తిన్నావా" to "తిన్నారా",
+        "తిన్నావు" to "తిన్నారు",
         "వచ్చావా" to "వచ్చారా",
+        "వచ్చావు" to "వచ్చారు",
         "చూశావా" to "చూశారా",
+        "చూశావు" to "చూశారు",
+        "చేశావా" to "చేశారా",
+        "చేశావు" to "చేశారు",
         "వెళ్ళావా" to "వెళ్ళారా",
+        "వెళ్ళావు" to "వెళ్ళారు",
         "అయ్యావు" to "అయ్యారు",
         "ఉంటున్నావు" to "ఉంటున్నారు",
         "చెయ్యి" to "చేయండి",
@@ -288,8 +567,40 @@ class OfflineTranslationProvider : TranslationProvider {
 
     // ---------- internals ----------
 
-    private fun normalize(text: String): String =
-        text.lowercase().trim().replace(Regex("[\\s]+"), " ")
+    /**
+     * Normalize for rule matching: lowercase, collapse whitespace, and
+     * expand common contractions ("i'm going home" → "i am going home")
+     * so chat-style input reaches the same rules as the spelled-out forms.
+     */
+    private fun normalize(text: String): String {
+        val cleaned = text.lowercase().trim().replace(Regex("[\\s]+"), " ")
+        return cleaned.split(' ').joinToString(" ") { word ->
+            CONTRACTIONS[word] ?: word
+        }
+    }
+
+    private companion object {
+        private val ARTICLES = setOf("a", "an", "the")
+
+        // Longest keys first is unnecessary (keys are distinct tokens) but
+        // each key must be a whole word — expansion is per whitespace token.
+        private val CONTRACTIONS = mapOf(
+            "i'm" to "i am", "i've" to "i have", "i'll" to "i will", "i'd" to "i would",
+            "you're" to "you are", "you've" to "you have", "you'll" to "you will",
+            "we're" to "we are", "we'll" to "we will", "we've" to "we have",
+            "they're" to "they are", "they'll" to "they will", "they've" to "they have",
+            "he's" to "he is", "he'll" to "he will", "she's" to "she is", "she'll" to "she will",
+            "it's" to "it is", "that's" to "that is", "there's" to "there is",
+            "what's" to "what is", "who's" to "who is", "where's" to "where is",
+            "how's" to "how is", "when's" to "when is", "why's" to "why is",
+            "don't" to "do not", "doesn't" to "does not", "didn't" to "did not",
+            "won't" to "will not", "can't" to "cannot", "couldn't" to "could not",
+            "shouldn't" to "should not", "wouldn't" to "would not",
+            "isn't" to "is not", "aren't" to "are not", "wasn't" to "was not", "weren't" to "were not",
+            "haven't" to "have not", "hasn't" to "has not", "hadn't" to "had not",
+            "let's" to "let us",
+        )
+    }
 
     private fun matchRule(normalized: String, style: TranslationStyle): String? {
         for (rule in rules) {
@@ -382,9 +693,5 @@ class OfflineTranslationProvider : TranslationProvider {
             }
         }
         return null
-    }
-
-    companion object {
-        private val ARTICLES = setOf("a", "an", "the")
     }
 }
