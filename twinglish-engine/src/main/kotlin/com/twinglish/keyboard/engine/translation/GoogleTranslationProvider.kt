@@ -393,12 +393,40 @@ class GoogleTranslationProvider(
         "ఉంటాను" to "ఉంటా",
         "ఉన్నాను" to "ఉన్నా",
         "చదువుతున్నాను" to "చదువుతున్నా",
+        // ---- Formal imperative endings (-ండి) → casual bare forms ----
+        "చేయండి" to "చేయి",
+        "అనండి" to "అను",
+        "చూడండి" to "చూడు",
+        "రండి" to "రా",
+        "తినండి" to "తిను",
+        "వెళ్ళండి" to "వెళ్ళు",
+        "పంపండి" to "పంపు",
+        "ఇవ్వండి" to "ఇవ్వు",
+        "ఉండండి" to "ఉండు",
+        "తీసుకోండి" to "తీసుకో",
         // ---- ఏమి → ఏం : "ఏమి చేస్తున్నావు" → "ఏం చేస్తున్నావు" (emi → em), and
         //      ఏమిటి → ఏంటి (emiti → enti, the chat form) ----
         "ఏమిటి" to "ఏంటి",
         "ఏమి" to "ఏం",
         // ---- మీ (your) → నీ (your) when not already మీరు/మీకు ----
         "మీ " to "నీ ",
+    )
+
+    // ---- Romanized formal endings that survive cleanTelugu ----
+    // cleanTelugu() replaces compound verbs (ప్రయత్నించండి → "try cheyandi")
+    // BEFORE casualize() runs, so the Telugu imperative suffix is already
+    // romanized. These catch the romanized forms and shorten them.
+    private val romanizedCasual = listOf(
+        "cheyandi" to "chey",
+        "anandhi" to "annu",
+        "choodandi" to "choodu",
+        "randi" to "raa",
+        "tinandi" to "tinu",
+        "vellandi" to "vellu",
+        "pampandi" to "pampu",
+        "ivvandi" to "ivvu",
+        "undandi" to "undu",
+        "teesukondi" to "teesuko",
     )
 
     /**
@@ -416,6 +444,12 @@ class GoogleTranslationProvider(
             out = out.replace(formal, casual)
         }
         for ((formal, casual) in casualTransforms) {
+            out = out.replace(formal, casual)
+        }
+        // Romanized formal endings: cleanTelugu() already converted compound
+        // verbs (ప్రయత్నించండి → "try cheyandi") before we run, so the
+        // imperative suffix is romanized. Shorten those too.
+        for ((formal, casual) in romanizedCasual) {
             out = out.replace(formal, casual)
         }
         return out.trim().replace(Regex("\\s{2,}"), " ")
@@ -450,6 +484,59 @@ class GoogleTranslationProvider(
         "వీడియోకి" to "video ki",
         "వీడియోలు" to "videos",
         "వీడియో" to "video",
+        // --- company / companies ---
+        "కంపెనీలను" to "companies",
+        "కంపెనీలు" to "companies",
+        "కంపెనీతో" to "company to",
+        "కంపెనీలో" to "company lo",
+        "కంపెనీకి" to "company ki",
+        "కంపెనీ" to "company",
+        // --- market ---
+        "మార్కెట్\u200Cకి" to "market ki",
+        "మార్కెట్కి" to "market ki",
+        "మార్కెట్\u200Cలో" to "market lo",
+        "మార్కెట్లో" to "market lo",
+        "మార్కెట్" to "market",
+        // --- school / college ---
+        "స్కూల్\u200Cకి" to "school ki",
+        "స్కూల్కి" to "school ki",
+        "స్కూల్" to "school",
+        "కాలేజ్\u200Cకి" to "college ki",
+        "కాలేజ్కి" to "college ki",
+        "కాలేజ్" to "college",
+        // --- software / hardware / computer / laptop ---
+        "సాఫ్ట్వేర్" to "software",
+        "హార్డ్వేర్" to "hardware",
+        "కంప్యూటర్" to "computer",
+        "ల్యాప్టాప్" to "laptop",
+        // --- network / system / application / settings ---
+        "నెట్వర్క్" to "network",
+        "సిస్టమ్" to "system",
+        "అప్లికేషన్" to "application",
+        "సెట్టింగ్స్" to "settings",
+        // --- number / password / address ---
+        "నంబర్" to "number",
+        "పాస్వర్డ్" to "password",
+        "అడ్రస్" to "address",
+        // --- information / connection / location ---
+        "ఇన్ఫర్మేషన్" to "information",
+        "కనెక్షన్" to "connection",
+        "లొకేషన్" to "location",
+        // --- data / features / service ---
+        "డేటా" to "data",
+        "ఫీచర్లు" to "features",
+        "సర్వీస్" to "service",
+        // --- offer / price / delivery / customer ---
+        "ఆఫర్" to "offer",
+        "ప్రైస్" to "price",
+        "డెలివరీ" to "delivery",
+        "కస్టమర్" to "customer",
+        // --- shopping / traffic / hotel / restaurant ---
+        "షాపింగ్" to "shopping",
+        "ట్రాఫిక్" to "traffic",
+        "హోటల్" to "hotel",
+        "రెస్టారెంట్" to "restaurant",
+        // --- try ---
         "ప్రయత్నించండి" to "try cheyandi",
         "ప్రయత్నించు" to "try chey",
         "ఆఫీస్\u200Cకి" to "office ki",

@@ -130,7 +130,7 @@ class GoogleTranslationProviderTest {
 
         val result = provider.translateEnglishToTelugu("i am going to market", TranslationStyle.CASUAL)
         // CASUAL drops the formal -ను: వెళ్తున్నాను → వెళ్తున్నా (velthunna).
-        assertEquals("నేను మార్కెట్ కి వెళ్తున్నా", result!!.telugu)
+        assertEquals("నేను market కి వెళ్తున్నా", result!!.telugu)
         assertEquals(1, offline.calls)
     }
 
@@ -283,7 +283,7 @@ class GoogleTranslationProviderTest {
 
         val result = provider.translateEnglishToTelugu("i am going to the market", TranslationStyle.CASUAL)
         // CASUAL drops the formal -ను: వెళ్తున్నాను → వెళ్తున్నా (velthunna).
-        assertEquals("నేను మార్కెట్ కి వెళ్తున్నా", result!!.telugu)
+        assertEquals("నేను market కి వెళ్తున్నా", result!!.telugu)
         assertTrue(result.twinglish.endsWith("unna") && !result.twinglish.endsWith("?"))
     }
 
@@ -458,11 +458,11 @@ class GoogleTranslationProviderTest {
         assertTrue(out.contains("update"))
         assertTrue(out.contains("content"))
         assertTrue(out.contains("video"))
-        assertTrue(out.contains("try cheyandi"))
+        assertTrue(out.contains("try chey"))
         // …and the whole sentence is natural Twinglish, not a mangled
         // transliteration.
         assertEquals(
-            "konnisarlu vaaru labs update chestaru, kanuka labs content saripolakapote, maroka video to try cheyandi",
+            "konnisarlu vaaru labs update chestaru, kanuka labs content saripolakapote, maroka video to try chey",
             out,
         )
     }
@@ -533,5 +533,68 @@ class GoogleTranslationProviderTest {
         assertEquals("ఎలా ఉన్నావు?", result!!.telugu)
         assertEquals("ela unnav?", result.twinglish)
         assertEquals(0, fetches)
+    }
+
+    // ------------------------------------------------------------------
+    // companies loanword + romanized casual "chey" (not "cheyandi")
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `try other companies keeps companies english and uses casual chey`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "ఇతర కంపెనీలను ప్రయత్నించండి" },
+        )
+
+        val result = provider.translateEnglishToTelugu(
+            "try other companies",
+            TranslationStyle.CASUAL,
+        )
+        val out = result!!.twinglish
+        // "companies" stays as English, not "kampeneelanu"
+        assertTrue("companies must stay english: $out", out.contains("companies"))
+        assertFalse("must not contain telugu company: $out", out.contains("కంపెనీ"))
+        // Casual: "chey" not "cheyandi"
+        assertTrue("must use casual chey not cheyandi: $out", out.contains("chey"))
+        assertFalse("must not contain formal cheyandi: $out", out.contains("cheyandi"))
+        assertEquals("itara companies try chey", out)
+    }
+
+    @Test
+    fun `polite style keeps formal cheyandi for try companies`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "ఇతర కంపెనీలను ప్రయత్నించండి" },
+        )
+
+        val result = provider.translateEnglishToTelugu(
+            "try other companies",
+            TranslationStyle.POLITE,
+        )
+        val out = result!!.twinglish
+        assertTrue("polite keeps cheyandi: $out", out.contains("cheyandi"))
+    }
+
+    @Test
+    fun `companies loanword variants are all restored`() = runBlocking {
+        val provider = GoogleTranslationProvider(
+            offline = FakeOffline(null),
+            onlineEnabled = { true },
+            fetcher = { "కంపెనీలను చూడండి" },
+        )
+
+        val result = provider.translateEnglishToTelugu(
+            "see the companies",
+            TranslationStyle.CASUAL,
+        )
+        val out = result!!.twinglish
+        assertTrue("companies stays english: $out", out.contains("companies"))
+        // Casual: "choodu" not "choodandi"
+        assertTrue("companies stays english: $out", out.contains("companies"))
+        assertFalse("must not contain telugu company: $out", out.contains("కంపెనీ"))
+        // Casual: "chudu" not "choodandi"
+        assertTrue("uses casual chudu: $out", out.contains("chudu"))
     }
 }
